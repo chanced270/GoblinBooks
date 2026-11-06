@@ -4,7 +4,7 @@
 --
 -- Embedded library: each addon ships an identical copy and the newest MINOR wins. Edit the copy in
 -- GoblinUI/Libs/ and run tools/deploy.ps1, which copies it into GoblinBooks/Libs/.
-local MINOR = 2
+local MINOR = 3
 if GoblinTheme and (GoblinTheme.MINOR or 0) >= MINOR then return end
 
 local W = {}
@@ -148,7 +148,8 @@ function W.CloseButton(parent, onClick)
 end
 
 ---------------------------------------------------------------------------
--- Segmented control: options = { { key, label } }; onSelect(key)
+-- Segmented control: options = { { key, label } }; onSelect(key). segW is each segment's minimum width;
+-- a segment grows to fit its label. SetLabel(key, text) changes a label (e.g. to add a count) and re-fits.
 ---------------------------------------------------------------------------
 function W.Segmented(parent, options, onSelect, segW)
     segW = segW or 70
@@ -193,6 +194,28 @@ function W.Segmented(parent, options, onSelect, segW)
         self.value = key
         for _, b in ipairs(self.buttons) do Paint(b) end
     end
+
+    --- Sizes each segment to fit its label (at least segW) and the control to fit them all.
+    function f:Layout()
+        local x = 2
+        for _, b in ipairs(self.buttons) do
+            local w = math.max(segW, math.ceil(b.text:GetStringWidth()) + 18)
+            b:SetWidth(w)
+            b:ClearAllPoints()
+            b:SetPoint("TOPLEFT", x, -2)
+            x = x + w
+        end
+        self:SetWidth(x + 2)
+    end
+
+    function f:SetLabel(key, text)
+        for _, b in ipairs(self.buttons) do
+            if b.key == key then b.text:SetText(text) end
+        end
+        self:Layout()
+    end
+
+    f:Layout()
     f:SetValue(nil)
     return f
 end

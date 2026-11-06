@@ -616,8 +616,7 @@ local function Create()
     end
 
     p.auctions = UI.CreateAHAuctions(p, SetStatus, function(undercut)
-        local label = p.pageSeg.buttons[3].text
-        label:SetText(undercut > 0 and ("Auctions |cffff6060%d|r"):format(undercut) or "Auctions")
+        p.pageSeg:SetLabel("auctions", undercut > 0 and ("Auctions |cffff6060%d|r"):format(undercut) or "Auctions")
     end)
     p.auctions:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 12, -30)
     p.auctions:SetPoint("BOTTOMRIGHT", -12, 12)
