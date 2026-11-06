@@ -3,7 +3,7 @@
 ## Notes: Gold ledger: tracks where your gold comes from, auction house profit/loss with cost basis, and charts.
 ## Version: @project-version@
 ## IconTexture: Interface\AddOns\GoblinBooks\Media\logo
-# X-Curse-Project-ID: set this to your CurseForge project ID and make it a "## " line
+## X-Curse-Project-ID: 1786377
 ## SavedVariables: GoblinBooksDB
 ## OptionalDeps: GoblinUI
 ## AddonCompartmentFunc: GoblinBooks_OnAddonCompartmentClick
