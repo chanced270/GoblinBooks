@@ -1,0 +1,11 @@
+# BigWigs packager config: builds the GoblinBooks zip and uploads it to CurseForge when a v* tag is pushed
+# (see .github/workflows/release.yml). Dotfiles (.github, .gitignore, .pkgmeta) are left out automatically.
+package-as: GoblinBooks
+
+manual-changelog:
+  filename: CHANGELOG.md
+  markup-type: markdown
+
+ignore:
+  - tests
+  - .luacheckrc

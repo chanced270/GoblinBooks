@@ -1,0 +1,30 @@
+# Push a tag like v0.1.1 to run the tests, build the zip and upload it to CurseForge.
+# Needs the repo secret CF_API_KEY (a CurseForge API token) and "## X-Curse-Project-ID" in the TOC.
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # the packager also publishes a GitHub release with the zip
+    env:
+      CF_API_KEY: ${{ secrets.CF_API_KEY }}
+      GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the packager reads the tag history
+
+      - name: Install Lua
+        run: sudo apt-get update && sudo apt-get install -y lua5.1
+
+      - name: Run tests
+        run: lua5.1 tests/run.lua
+
+      - name: Package and upload
+        uses: BigWigsMods/packager@v2

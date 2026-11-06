@@ -1,0 +1,218 @@
+-- FIFO cost-basis lots and per-item auction house profit/loss ("flips").
+local _, ns = ...
+local CB = {}
+ns.CostBasis = CB
+
+local function Round(x) return math.floor((x or 0) + 0.5) end
+
+local function FlipKey(itemID, name)
+    return itemID or ("n:" .. (name or "?"))
+end
+CB.FlipKey = FlipKey
+
+--- Record an acquired lot of `qty` items at `unitCost` copper each.
+function CB.AddLot(char, itemID, qty, unitCost, src, t)
+    if not itemID or not qty or qty <= 0 then return end
+    local lots = char.lots[itemID]
+    if not lots then
+        lots = {}
+        char.lots[itemID] = lots
+    end
+    lots[#lots + 1] = { q = qty, u = unitCost or 0, t = t, src = src }
+end
+
+--- Consume `qty` items FIFO. Returns total cost (copper) and how many were covered by lots.
+function CB.Consume(char, itemID, qty)
+    local lots = itemID and char.lots[itemID]
+    local need, cost = qty, 0
+    while need > 0 and lots and lots[1] do
+        local lot = lots[1]
+        local take = math.min(need, lot.q)
+        cost = cost + take * lot.u
+        lot.q = lot.q - take
+        need = need - take
+        if lot.q <= 0 then table.remove(lots, 1) end
+    end
+    if lots and #lots == 0 then char.lots[itemID] = nil end
+    return Round(cost), qty - need
+end
+
+--- Quantity and total cost of items still held per lots.
+function CB.Holdings(char, itemID)
+    local qty, value = 0, 0
+    for _, lot in ipairs(char.lots[itemID] or {}) do
+        qty = qty + lot.q
+        value = value + lot.q * lot.u
+    end
+    return qty, Round(value)
+end
+
+function CB.GetFlip(char, itemID, name)
+    local key = FlipKey(itemID, name)
+    local f = char.flips[key]
+    if not f then
+        f = { sold = 0, revenue = 0, cut = 0, cost = 0, depPaid = 0, depRefund = 0, noCost = 0, i = itemID, n = name,
+              posted = 0, expired = 0, cancelled = 0, sellTime = 0, sellTimeN = 0 }
+        char.flips[key] = f
+    end
+    if name and not f.n then f.n = name end
+    return f
+end
+
+---------------------------------------------------------------------------
+-- Sell-through (exact, from your own auctions): posts are queued FIFO per item; a sale, expiry or
+-- cancellation resolves the oldest posted units. Sales also give the time it took to sell.
+---------------------------------------------------------------------------
+function CB.RecordPost(char, itemID, name, qty, t)
+    if not itemID or not qty or qty <= 0 then return end
+    local f = CB.GetFlip(char, itemID, name)
+    f.posted = (f.posted or 0) + qty
+    char.postQueue = char.postQueue or {}
+    local q = char.postQueue[itemID] or {}
+    char.postQueue[itemID] = q
+    q[#q + 1] = { q = qty, t = t }
+end
+
+--- Resolve `qty` posted units (oldest first). Returns their summed age in seconds at `t`, and how many
+--- units had a known post time.
+local function ResolvePosted(char, itemID, qty, t)
+    local q = char.postQueue and itemID and char.postQueue[itemID]
+    local age, known = 0, 0
+    while q and qty > 0 and #q > 0 do
+        local p = q[1]
+        local take = math.min(p.q, qty)
+        if t then age = age + math.max(0, t - p.t) * take end
+        known = known + take
+        qty = qty - take
+        p.q = p.q - take
+        if p.q <= 0 then table.remove(q, 1) end
+    end
+    if q and #q == 0 then char.postQueue[itemID] = nil end
+    return age, known
+end
+
+--- Units that came back unsold. kind = "expired" | "cancelled".
+function CB.RecordUnsold(char, itemID, name, qty, kind)
+    if not qty or qty <= 0 then return end
+    local f = CB.GetFlip(char, itemID, name)
+    f[kind] = (f[kind] or 0) + qty
+    ResolvePosted(char, itemID, qty, nil)
+end
+
+--- Sold share of resolved auctions (sold / (sold + expired + cancelled)), resolved count, avg seconds to sell.
+function CB.SellThrough(f)
+    local resolved = (f.sold or 0) + (f.expired or 0) + (f.cancelled or 0)
+    local rate = resolved > 0 and (f.sold or 0) / resolved or nil
+    local avg = (f.sellTimeN or 0) > 0 and f.sellTime / f.sellTimeN or nil
+    return rate, resolved, avg
+end
+
+--- An auction sold. bid = sale price, cut = AH consignment, refund = deposit returned with the sale.
+--- soldAt = when it sold (from the mail), for time-to-sell.
+function CB.RecordSale(char, itemID, name, count, bid, cut, refund, t, soldAt)
+    count = count or 1
+    local f = CB.GetFlip(char, itemID, name)
+    local age, known = ResolvePosted(char, itemID, count, soldAt or t)
+    if known > 0 then
+        f.sellTime = (f.sellTime or 0) + age
+        f.sellTimeN = (f.sellTimeN or 0) + known
+    end
+    local cost, covered = 0, 0
+    if itemID then cost, covered = CB.Consume(char, itemID, count) end
+    f.sold = f.sold + count
+    f.revenue = f.revenue + (bid or 0)
+    f.cut = f.cut + (cut or 0)
+    f.cost = f.cost + cost
+    f.depRefund = f.depRefund + (refund or 0)
+    f.noCost = f.noCost + (count - covered)
+    f.last = t
+    CB.cutCache = nil
+    return f, cost
+end
+
+--- A posting deposit was paid.
+function CB.RecordDeposit(char, itemID, name, amount, t)
+    local f = CB.GetFlip(char, itemID, name)
+    f.depPaid = f.depPaid + (amount or 0)
+    f.last = t
+    return f
+end
+
+---------------------------------------------------------------------------
+-- AH cut rate, measured from sale invoices (mail "consignment" vs sale price) across all characters.
+---------------------------------------------------------------------------
+CB.DEFAULT_CUT = 0.05
+CB.MAX_SAMPLES = 200
+
+--- Log one sale invoice (account-wide) so the cut can be checked per sale, not just on average.
+function CB.RecordCutSample(db, bid, cut, t)
+    if not bid or bid <= 0 then return end
+    db.cutSamples = db.cutSamples or {}
+    local list = db.cutSamples
+    list[#list + 1] = { b = bid, c = cut or 0, t = t }
+    while #list > CB.MAX_SAMPLES do table.remove(list, 1) end
+    CB.cutCache = nil
+end
+
+--- { rate, revenue, cut, sold, samples, lo, hi } — rate is nil when nothing has sold yet.
+function CB.CutStats(db)
+    local rev, cut, sold = 0, 0, 0
+    for _, c in pairs(db.chars or {}) do
+        for _, f in pairs(c.flips or {}) do
+            if (f.revenue or 0) > 0 then
+                rev, cut, sold = rev + f.revenue, cut + (f.cut or 0), sold + (f.sold or 0)
+            end
+        end
+    end
+    local lo, hi
+    local samples = db.cutSamples or {}
+    for _, s in ipairs(samples) do
+        local r = s.c / s.b
+        if not lo or r < lo then lo = r end
+        if not hi or r > hi then hi = r end
+    end
+    return { rate = rev > 0 and cut / rev or nil, revenue = rev, cut = cut, sold = sold, samples = #samples, lo = lo, hi = hi }
+end
+
+--- The cut rate to use for estimates: measured when any sale has been recorded, else the 5% default.
+--- Returns rate, measured (bool). Cached until the next recorded sale.
+function CB.CutRate(db)
+    if not CB.cutCache then
+        local s = CB.CutStats(db)
+        CB.cutCache = s.rate and { s.rate, true } or { CB.DEFAULT_CUT, false }
+    end
+    return CB.cutCache[1], CB.cutCache[2]
+end
+
+--- "5%" / "4.9%" for labels.
+function CB.CutLabel(rate)
+    local pct = rate * 100
+    if math.abs(pct - math.floor(pct + 0.5)) < 0.05 then return ("%d%%"):format(math.floor(pct + 0.5)) end
+    return ("%.1f%%"):format(pct)
+end
+
+function CB.Profit(f)
+    return f.revenue - f.cut - f.cost - f.depPaid + f.depRefund
+end
+
+--- Merge flips from several chars into one table keyed by flip key.
+function CB.MergeFlips(chars)
+    local out = {}
+    for _, c in ipairs(chars) do
+        for key, f in pairs(c.flips) do
+            local m = out[key]
+            if not m then
+                m = { sold = 0, revenue = 0, cut = 0, cost = 0, depPaid = 0, depRefund = 0, noCost = 0, i = f.i, n = f.n, last = 0,
+                      posted = 0, expired = 0, cancelled = 0, sellTime = 0, sellTimeN = 0 }
+                out[key] = m
+            end
+            for _, field in ipairs({ "sold", "revenue", "cut", "cost", "depPaid", "depRefund", "noCost",
+                                     "posted", "expired", "cancelled", "sellTime", "sellTimeN" }) do
+                m[field] = m[field] + (f[field] or 0)
+            end
+            m.n = m.n or f.n
+            if (f.last or 0) > m.last then m.last = f.last end
+        end
+    end
+    return out
+end
