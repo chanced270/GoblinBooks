@@ -773,5 +773,37 @@ test("category scan: pages through each chosen category, then finishes; it can b
 end)
 
 
+test("category scan of everything: at most once every 5 minutes, even if stopped early", function()
+    local ns = S.LoadAddon(ROOT)
+    assert(loadfile(ROOT .. "/AuctionScan.lua"))("GoblinBooks", ns)
+    local after = C_Timer.After
+    C_Timer.After = function(delay, fn) if delay <= 0 then fn() end end
+    AuctionCategories = {
+        { name = "Weapons", filters = { { classID = 2 } } },
+        { name = "Trade Goods", filters = { { classID = 7 } } },
+    }
+    C_AuctionHouse.SendBrowseQuery = function() end
+    C_AuctionHouse.IsThrottledMessageSystemReady = function() return true end
+    local AHS = ns.AHScan
+
+    eq(AHS.CategoryScan("all"), true)
+    AHS.StopCategoryScan()
+    local ok, msg = AHS.CategoryScan("all")
+    eq(ok, false, "stopping doesn't reset the limit")
+    assert(msg:find("5 minutes"), msg)
+    eq((AHS.CategoryScanReady("all")), false)
+
+    eq(AHS.CategoryScan("crafting"), true, "crafting markets aren't limited")
+    AHS.StopCategoryScan()
+
+    S.Advance(AHS.CAT_ALL_COOLDOWN)
+    eq((AHS.CategoryScanReady("all")), true)
+    eq(AHS.CategoryScan("all"), true, "allowed again after 5 minutes")
+    AHS.StopCategoryScan()
+    C_Timer.After = after
+    AuctionCategories = nil
+end)
+
+
 print(("%d passed, %d failed"):format(passed, failed))
 os.exit(failed == 0 and 0 or 1)

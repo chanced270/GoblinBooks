@@ -441,7 +441,7 @@ local function Create()
         local mode = ns.db.settings.scanMode or "full"
         local ok, msg
         if mode == "full" then ok, msg = S.FullScan() else ok, msg = S.CategoryScan(mode) end
-        if not ok then UI.ScanNotReady(msg, mode == "full") end
+        if not ok then UI.ScanNotReady(msg, mode) end
     end, true)
     p.modeBtn = W.Button(header, "Expand", 64, function()
         ns.db.settings.ahReplace = not ns.db.settings.ahReplace
@@ -476,7 +476,7 @@ local function Create()
         GameTooltip:SetOwner(b, "ANCHOR_BOTTOM")
         GameTooltip:AddLine("Scan type")
         GameTooltip:AddLine("Full scan: one snapshot of the whole auction house, once every 15 minutes.", 1, 1, 1, true)
-        GameTooltip:AddLine("Category scan: searches category by category. No cooldown, prices are saved as it goes, and you can stop it. Crafting markets = trade goods, consumables, recipes, gems, reagents and item enhancements.", 1, 1, 1, true)
+        GameTooltip:AddLine("Category scan: searches category by category, saving prices as it goes, and you can stop it. Crafting markets (trade goods, consumables, recipes, gems, reagents, item enhancements): no cooldown. Everything: at most once every 5 minutes.", 1, 1, 1, true)
         GameTooltip:Show()
     end)
     p.scanMode:HookScript("OnLeave", function() GameTooltip:Hide() end)
@@ -502,13 +502,17 @@ local function Create()
             GameTooltip:AddLine("Reads every auction and records the lowest price per item. The server allows one every 15 minutes.", 1, 1, 1, true)
         else
             GameTooltip:AddLine(mode == "all" and "Category scan: every category" or "Category scan: crafting markets")
-            GameTooltip:AddLine("Searches one category at a time and saves prices as it goes. No cooldown. Click again while it runs to stop (what it found is kept).", 1, 1, 1, true)
+            GameTooltip:AddLine(("Searches one category at a time and saves prices as it goes. %s Click again while it runs to stop (what it found is kept)."):format(
+                mode == "all" and "At most one every 5 minutes." or "No cooldown."), 1, 1, 1, true)
         end
         GameTooltip:AddLine("Change the scan type with the arrow next to this button.", 0.55, 0.58, 0.64, true)
         local info = p.scanInfo
         if info then GameTooltip:AddLine(info, 1, 0.82, 0, true) end
         local ready, left = S.FullScanReady()
-        if mode == "full" and not ready and not S.scanning then GameTooltip:AddLine(("Available in %dm %ds"):format(math.floor(left / 60), left % 60), 1, 0.6, 0.2) end
+        if mode ~= "full" then ready, left = S.CategoryScanReady(mode) end
+        if not ready and not S.scanning and not S.catScanning then
+            GameTooltip:AddLine(("Available in %dm %ds"):format(math.floor(left / 60), left % 60), 1, 0.6, 0.2)
+        end
         local last = ns.db.lastScanResult
         if last and not S.scanning and not S.catScanning then
             GameTooltip:AddLine(("Last %s %s: %s items from %s auctions"):format(last.kind == "categories" and "category scan" or "scan",
@@ -892,10 +896,12 @@ local function ScanButton(text, pct)
 end
 
 --- The scan couldn't start (cooldown, client): say so on the button for a few seconds.
-function UI.ScanNotReady(msg, full)
+function UI.ScanNotReady(msg, mode)
     if not panel then return end
     if scanResetTimer then scanResetTimer:Cancel() end
-    local left = full and select(2, S.FullScanReady()) or 0 -- the 15-minute cooldown is for full scans only
+    -- Full scans have the server's 15-minute limit; a scan of every category has our own 5-minute one.
+    local left
+    if mode == "full" then left = select(2, S.FullScanReady()) else left = select(2, S.CategoryScanReady(mode)) end
     ScanButton(left > 0 and ("|cffff9933%dm left|r"):format(math.ceil(left / 60)) or "|cffff9933Not now|r", nil)
     panel.scanInfo = "|cffff9933" .. tostring(msg) .. "|r"
     scanResetTimer = C_Timer.NewTimer(4, function()

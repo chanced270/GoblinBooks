@@ -399,12 +399,32 @@ function S.OnCategoryPage()
     end
 end
 
+-- A category scan of everything sends a lot of searches. Blizzard doesn't document how its servers treat
+-- repeated ones, so we limit ourselves: at most one every CAT_ALL_COOLDOWN, counted from its start
+-- (stopping early doesn't reset it). Crafting-market scans are much smaller and aren't limited.
+S.CAT_ALL_COOLDOWN = 5 * 60
+
+--- Whether a scan of this mode can start now, and the seconds left if not.
+function S.CategoryScanReady(mode, now)
+    if mode ~= "all" then return true, 0 end
+    local last = ns.db.lastCategoryScanAll or 0
+    local left = S.CAT_ALL_COOLDOWN - ((now or time()) - last)
+    return left <= 0, math.max(0, left)
+end
+
 --- Starts a category scan. Returns true, or false and why not.
 function S.CategoryScan(mode)
+    mode = mode or "all"
     if not (AH and AH.SendBrowseQuery) then return false, "searching isn't supported by this client" end
     if S.scanning or cat then return false, "a scan is already running" end
-    local list = CategoriesFor(mode or "all")
+    local ready, left = S.CategoryScanReady(mode)
+    if not ready then
+        return false, ("a scan of every category is limited to one every 5 minutes: available in %dm %ds"):format(
+            math.floor(left / 60), left % 60)
+    end
+    local list = CategoriesFor(mode)
     if #list == 0 then return false, "no auction house categories found" end
+    if mode == "all" then ns.db.lastCategoryScanAll = time() end
     cat = { list = list, i = 0, items = {}, count = 0, auctions = 0, token = 0, waiting = false }
     S.catScanning = true
     NextCategory()
