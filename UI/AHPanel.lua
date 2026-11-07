@@ -68,6 +68,29 @@ local function IsBoundSlot(info, loc, bag, slot)
     return false
 end
 
+-- AH category of a bag item (top level, by label), from the game's AH categories. Cached per item.
+local catTree, catOf = nil, {}
+local OTHER_CAT = "Other"
+local function CategoryOf(itemID)
+    local c = catOf[itemID]
+    if c then return c end
+    catTree = catTree or S.CategoryTree()
+    c = OTHER_CAT
+    for _, cat in ipairs(catTree) do
+        if S.ItemMatches(itemID, cat.filters) then c = cat.label break end
+    end
+    catOf[itemID] = c
+    return c
+end
+
+local function IconFor(info)
+    if info.iconFileID then return info.iconFileID end
+    if C_Item and C_Item.GetItemIconByID then
+        local ok, icon = pcall(C_Item.GetItemIconByID, info.itemID)
+        if ok then return icon end
+    end
+end
+
 local function ScanBags()
     local rows, byKey = {}, {}
     if not (C_Container and ItemLocation and AH.IsSellItemValid) then return rows end
@@ -83,8 +106,8 @@ local function ScanBags()
                     local key = commodity and info.itemID or (info.hyperlink or info.itemID)
                     local r = byKey[key]
                     if not r then
-                        r = { key = key, itemID = info.itemID, link = info.hyperlink, icon = info.iconFileID,
-                              count = 0, loc = loc, commodity = commodity }
+                        r = { key = key, itemID = info.itemID, link = info.hyperlink, icon = IconFor(info),
+                              count = 0, loc = loc, commodity = commodity, cat = CategoryOf(info.itemID) }
                         byKey[key] = r
                         rows[#rows + 1] = r
                     end
@@ -573,6 +596,13 @@ local function Create()
     p.search:SetPoint("RIGHT", -12, 0)
     p.search:HookScript("OnTextChanged", function(_, user) if user then p.list:SetData(p.FilterRows(ScanBags())) end end)
 
+    -- Category breakdown: what's in your bags per AH category (count and market value); pick one to narrow
+    -- the list. The choice is kept by label: ns.db.sellCat.
+    p.catDrop = W.Dropdown(p, 150, function(key)
+        ns.db.sellCat = key ~= "all" and key or nil
+        p.list:SetData(p.FilterRows(ScanBags()))
+    end)
+
     local columns = {
         { title = "Item", get = function(r)
             return (r.icon and ("|T%s:16:16:0:0|t  "):format(r.icon) or "") .. DisplayName(r)
@@ -623,12 +653,44 @@ local function Create()
     list.isSelected = function(r) return p.form.row and p.form.row.key == r.key end
     p.list = list
 
+    --- Rebuild the category options from these rows: { "Trade Goods (12) - 3g 40s", ... }, biggest value first.
+    local function UpdateCategories(rows)
+        local by, order = {}, {}
+        for _, r in ipairs(rows) do
+            local c = r.cat or OTHER_CAT
+            local e = by[c]
+            if not e then
+                e = { label = c, n = 0, value = 0 }
+                by[c] = e
+                order[#order + 1] = e
+            end
+            e.n = e.n + 1
+            e.value = e.value + (P.Market(r.itemID) or 0) * r.count
+        end
+        table.sort(order, function(a, b)
+            if a.value ~= b.value then return a.value > b.value end
+            return a.label < b.label
+        end)
+        local opts = { { key = "all", label = ("All items (%d)"):format(#rows) } }
+        for _, e in ipairs(order) do
+            opts[#opts + 1] = { key = e.label, label = e.value > 0 and ("%s (%d) - %s"):format(e.label, e.n, U.FormatGoldShort(e.value))
+                or ("%s (%d)"):format(e.label, e.n) }
+        end
+        -- A saved category with nothing in your bags right now falls back to all items (but stays saved).
+        local cur = ns.db.sellCat
+        if cur and not by[cur] then cur = nil end
+        p.catDrop:SetOptions(opts)
+        p.catDrop:SetValue(cur or "all")
+        return cur
+    end
+
     function p.FilterRows(rows)
+        local cat = UpdateCategories(rows)
         local q = (p.search:GetText() or ""):lower()
-        if q == "" then return rows end
+        if q == "" and not cat then return rows end
         local out = {}
         for _, r in ipairs(rows) do
-            if PlainName(r):find(q, 1, true) then out[#out + 1] = r end
+            if (q == "" or PlainName(r):find(q, 1, true)) and (not cat or r.cat == cat) then out[#out + 1] = r end
         end
         return out
     end
@@ -642,7 +704,7 @@ local function Create()
     p.form:SetPoint("BOTTOMLEFT", p.postBtn, "TOPLEFT", 0, 8)
     p.form:SetPoint("BOTTOMRIGHT", p.postBtn, "TOPRIGHT", 0, 8)
     list:SetPoint("BOTTOM", p.form, "TOP", 0, 10)
-    p.sellWidgets = { p.search, list, p.form, p.postBtn }
+    p.sellWidgets = { p.search, p.catDrop, list, p.form, p.postBtn }
     p.sellChart = UI.CreatePriceChart(p, { listings = true })
     p.sellChart:Hide()
 
@@ -653,24 +715,27 @@ local function Create()
         self.wide = wide
         local header = self.header
         self.search:ClearAllPoints()
+        self.catDrop:ClearAllPoints()
         list:ClearAllPoints()
         self.postBtn:ClearAllPoints()
         self.sellChart:ClearAllPoints()
         if wide then
             local leftW = math.floor((self:GetWidth() - 36) * 0.45)
             self.search:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 12, -30)
-            self.search:SetWidth(leftW)
+            self.search:SetWidth(leftW - self.catDrop:GetWidth() - 6)
+            self.catDrop:SetPoint("LEFT", self.search, "RIGHT", 6, 0)
             list:SetPoint("TOPLEFT", self.search, "BOTTOMLEFT", 0, -8)
             list:SetPoint("BOTTOMLEFT", 12, 12)
             list:SetWidth(leftW)
             self.postBtn:SetPoint("BOTTOMLEFT", list, "BOTTOMRIGHT", 12, 0)
             self.postBtn:SetPoint("BOTTOMRIGHT", -12, 12)
-            self.sellChart:SetPoint("TOPLEFT", self.search, "TOPRIGHT", 12, 0)
+            self.sellChart:SetPoint("TOPLEFT", self.catDrop, "TOPRIGHT", 12, 0)
             self.sellChart:SetPoint("RIGHT", -12, 0)
             self.sellChart:SetPoint("BOTTOM", self.form, "TOP", 0, 10)
         else
             self.search:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 12, -30)
-            self.search:SetPoint("RIGHT", -12, 0)
+            self.catDrop:SetPoint("TOPRIGHT", header, "BOTTOMRIGHT", -12, -30)
+            self.search:SetPoint("RIGHT", self.catDrop, "LEFT", -6, 0)
             list:SetPoint("TOPLEFT", self.search, "BOTTOMLEFT", 0, -8)
             list:SetPoint("RIGHT", -12, 0)
             list:SetPoint("BOTTOM", self.form, "TOP", 0, 10)
