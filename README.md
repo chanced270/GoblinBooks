@@ -40,6 +40,7 @@ Install from CurseForge, or copy the `GoblinBooks` folder into `World of Warcraf
 | `/gb export` | Export the ledger as CSV (copy out of the game) |
 | `/gb deposit` | Whether the WoW Forever minimum-deposit bug (deposits under 1s charged 1s) is still happening, from your own posts |
 | `/gb cut` | Show the AH cut measured from your sale mails, with the per-sale range |
+| `/gb scanlog` | What happened during the last AH scans: request sent, data arrived (and after how long), timeouts, anything the game blocked |
 | `/gb perf` | Times what GoblinBooks does: type it, do the slow thing (open the AH, scan...), type it again for the slowest events |
 | `/gb resetwindow` | Move the windows back to their default position and size (main window after `/reload`, AH window next time it opens) |
 | `/gb options` | Settings: account view, bank transfers in charts, retention |

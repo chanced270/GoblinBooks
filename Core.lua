@@ -252,6 +252,7 @@ local HELP = {
     "/gb minimap - show or hide the minimap button",
     "/gb deposit - is the WoW Forever 1s minimum-deposit bug still happening?",
     "/gb perf - time what GoblinBooks does (type it, do the slow thing, type it again)",
+    "/gb scanlog - what happened during the last AH scans (requests, data, timeouts)",
     "/gb reset confirm - wipe this character's data",
 }
 
@@ -306,6 +307,13 @@ SlashCmdList.GOBLINBOOKS = function(msg)
         ns:Print("window positions reset (main window after /reload, auction house window next time you open it)")
     elseif cmd == "perf" then
         ns:PerfToggle()
+    elseif cmd == "scanlog" then
+        local log = ns.db.scanLog or {}
+        if #log == 0 then ns:Print("no scans logged yet") end
+        for i = math.max(1, #log - 14), #log do
+            local e = log[i]
+            ns:Print(("%s  %s%s"):format(date("%H:%M:%S", e.t), e.e, e.d and ("  |cff8c94a3" .. e.d .. "|r") or ""))
+        end
     elseif cmd == "prune" then
         local n = ns.Ledger.Prune(ns.char, ns.db.settings.retentionDays, time())
         ns:Print(("pruned %d entries"):format(n))

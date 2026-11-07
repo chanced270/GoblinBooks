@@ -153,6 +153,31 @@ function S.Search(itemKey)
 end
 
 ---------------------------------------------------------------------------
+-- Scan log (saved, newest last): what was requested, what the game blocked, what arrived and when. Read
+-- from the saved variables to see why a scan failed.
+---------------------------------------------------------------------------
+local LOG_MAX = 60
+function S.Log(event, detail)
+    if not ns.db then return end
+    local log = ns.db.scanLog or {}
+    ns.db.scanLog = log
+    log[#log + 1] = { t = time(), e = event, d = detail ~= nil and tostring(detail) or nil }
+    while #log > LOG_MAX do table.remove(log, 1) end
+end
+
+-- The game refusing one of our calls (e.g. one that must come straight from a click) shows up here.
+local function OnBlocked(event, addon, func)
+    if addon ~= ns.ADDON then return end
+    S.Log(event == "ADDON_ACTION_FORBIDDEN" and "forbidden" or "blocked", func)
+    if S.scanning and not S.processing and type(func) == "string" and func:find("Replicate") then
+        S.scanning, S.requestedAt = false, nil
+        ns:Fire("SCAN_PROGRESS", "failed", "the game blocked the request (" .. func .. ")")
+    end
+end
+ns:On("ADDON_ACTION_BLOCKED", OnBlocked)
+ns:On("ADDON_ACTION_FORBIDDEN", OnBlocked)
+
+---------------------------------------------------------------------------
 -- Full scan (C_AuctionHouse.ReplicateItems, server allows one every 15 minutes)
 ---------------------------------------------------------------------------
 function S.FullScanReady(now)
@@ -171,15 +196,16 @@ function S.FullScan()
     S.requestedAt = requested
     ns.db.lastFullScan = time()
     ns:Fire("SCAN_PROGRESS", "waiting", 0)
-    -- Ask the server on the next frame, so the "waiting" status is drawn before the client gets busy.
-    C_Timer.After(0, function()
-        local ok, err = pcall(AH.ReplicateItems)
-        if not ok then
-            S.scanning, S.requestedAt = false, nil
-            ns.db.lastFullScan = nil
-            ns:Fire("SCAN_PROGRESS", "failed", tostring(err))
-        end
-    end)
+    -- Called directly (from the Scan button's click), not from a timer: some auction house requests are
+    -- only allowed straight from a click. The client stays responsive here; the heavy part comes later.
+    local ok, err = pcall(AH.ReplicateItems)
+    S.Log("full: request", ok and "sent" or ("error: " .. tostring(err)))
+    if not ok then
+        S.scanning, S.requestedAt = false, nil
+        ns.db.lastFullScan = nil
+        ns:Fire("SCAN_PROGRESS", "failed", tostring(err))
+        return true
+    end
     -- A big auction house can take the server a minute or more to answer: show how long it's been, and
     -- only call it failed after WAIT_LIMIT. Even then, data that still arrives is used (see below).
     local function Tick()
@@ -187,6 +213,7 @@ function S.FullScan()
         local waited = GetTime() - requested
         if waited >= S.WAIT_LIMIT then
             S.scanning = false
+            S.Log("full: timeout", math.floor(waited) .. "s")
             ns:Fire("SCAN_PROGRESS", "failed", ("no answer from the server after %d seconds"):format(S.WAIT_LIMIT))
             return
         end
@@ -203,6 +230,7 @@ S.LATE_LIMIT = 600  -- seconds after asking that the server's data is still acce
 -- Closing the auction house drops the scan: say so instead of waiting for the timeout.
 ns:On("AUCTION_HOUSE_CLOSED", function()
     if S.requestedAt and not S.processing then
+        S.Log("full: auction house closed", S.scanning and "while waiting" or "after the timeout")
         local wasWaiting = S.scanning
         S.scanning, S.requestedAt = false, nil
         if wasWaiting then ns:Fire("SCAN_PROGRESS", "failed", "the auction house was closed before the data arrived") end
@@ -215,12 +243,18 @@ local BUDGET_MS = 12
 local clock = debugprofilestop or function() return GetTime() * 1000 end
 
 ns:On("REPLICATE_ITEM_LIST_UPDATE", function()
-    if S.processing then return end
+    local count = AH.GetNumReplicateItems and AH.GetNumReplicateItems() or 0
+    local since = S.requestedAt and math.floor(GetTime() - S.requestedAt)
+    if S.processing then S.Log("full: data event while reading", count) return end
     -- Data from our request, even if it arrived after we gave up waiting (the server was just slow).
     local late = not S.scanning and S.requestedAt and GetTime() - S.requestedAt <= S.LATE_LIMIT
-    if not S.scanning and not late then return end
+    if not S.scanning and not late then
+        S.Log("full: data event ignored", ("%d auctions, %s"):format(count, since and (since .. "s after request") or "no request"))
+        return
+    end
+    S.Log("full: data arrived", ("%d auctions, %ss after request%s"):format(count, tostring(since), late and " (late)" or ""))
     S.scanning, S.processing = true, true
-    local n = AH.GetNumReplicateItems() or 0
+    local n = count
     local lows, qtys, names = {}, {}, {}
     local i = 0
     local ids, j, now
@@ -248,6 +282,7 @@ ns:On("REPLICATE_ITEM_LIST_UPDATE", function()
         end
         S.scanning, S.processing, S.requestedAt = false, false, nil
         ns.db.lastScanResult = { t = time(), items = #ids, auctions = n, kind = "full" }
+        S.Log("full: done", ("%d items from %d auctions"):format(#ids, n))
         ns:Fire("SCAN_PROGRESS", "done", #ids, n)
         ns:Fire("PRICES_UPDATED")
     end
@@ -354,6 +389,7 @@ end
 
 local function Finish(state)
     local done = cat
+    S.Log("categories: " .. state, ("%d items, %d of %d categories"):format(done.count, math.min(done.i, #done.list), #done.list))
     cat = nil
     S.catScanning = false
     ns.db.lastScanResult = { t = time(), items = done.count, auctions = done.auctions, kind = "categories" }
@@ -425,6 +461,7 @@ function S.CategoryScan(mode)
     local list = CategoriesFor(mode)
     if #list == 0 then return false, "no auction house categories found" end
     if mode == "all" then ns.db.lastCategoryScanAll = time() end
+    S.Log("categories: start", mode .. ", " .. #list .. " categories")
     cat = { list = list, i = 0, items = {}, count = 0, auctions = 0, token = 0, waiting = false }
     S.catScanning = true
     NextCategory()
