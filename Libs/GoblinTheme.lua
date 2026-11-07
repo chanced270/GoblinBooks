@@ -4,7 +4,7 @@
 --
 -- Embedded library: each addon ships an identical copy and the newest MINOR wins. Edit the copy in
 -- GoblinUI/Libs/ and run tools/deploy.ps1, which copies it into GoblinBooks/Libs/.
-local MINOR = 3
+local MINOR = 4
 if GoblinTheme and (GoblinTheme.MINOR or 0) >= MINOR then return end
 
 local W = {}
@@ -259,6 +259,7 @@ local function OpenMenu(owner)
             item.text = W.Text(item, "body")
             item.text:SetPoint("LEFT", 24, 0)
             item.text:SetPoint("RIGHT", -8, 0)
+            item.text:SetWordWrap(false) -- one line per item; the menu widens to fit instead
             item.text:SetJustifyH("LEFT")
             menu.items[i] = item
         end
@@ -280,9 +281,20 @@ local function OpenMenu(owner)
         item:Show()
     end
     for i = #opts + 1, #menu.items do menu.items[i]:Hide() end
+    -- Wide enough for the longest label (swatch + padding), and kept on screen.
+    local widest = 0
+    for i = 1, #opts do widest = math.max(widest, menu.items[i].text:GetStringWidth()) end
+    local width = math.max(owner:GetWidth(), 160, math.ceil(widest) + 24 + 14)
+    menu:SetSize(width, #opts * 22 + 8)
+    menu:SetClampedToScreen(true)
     menu:ClearAllPoints()
-    menu:SetPoint("TOPLEFT", owner, "BOTTOMLEFT", 0, -2)
-    menu:SetSize(math.max(owner:GetWidth(), 160), #opts * 22 + 8)
+    -- Open toward the side with room: right-aligned when the owner is in the right half of the screen.
+    local right = owner:GetRight()
+    if right and right > UIParent:GetWidth() / 2 then
+        menu:SetPoint("TOPRIGHT", owner, "BOTTOMRIGHT", 0, -2)
+    else
+        menu:SetPoint("TOPLEFT", owner, "BOTTOMLEFT", 0, -2)
+    end
     blocker:Show()
     menu:Show()
 end

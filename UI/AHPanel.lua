@@ -466,9 +466,9 @@ local function Create()
     p.scanMode.arrow:ClearAllPoints()
     p.scanMode.arrow:SetPoint("CENTER", 0, -2)
     p.scanMode:SetOptions({
-        { key = "full", label = "Full scan: everything (every 15 min)" },
-        { key = "crafting", label = "Category scan: crafting markets" },
-        { key = "all", label = "Category scan: every category" },
+        { key = "full", label = "Full scan (every 15 min)" },
+        { key = "crafting", label = "Categories: crafting markets" },
+        { key = "all", label = "Categories: everything" },
     })
     p.scanMode:SetValue(ns.db.settings.scanMode or "full")
     p.scanMode:SetPoint("RIGHT", p.modeBtn, "LEFT", -6, 0)

@@ -1,5 +1,10 @@
 # GoblinBooks changelog
 
+## 0.1.2
+
+### Fixed
+- Dropdown menus (like the scan type menu next to Scan) widen to fit their options instead of wrapping them onto overlapping lines, and stay on screen.
+
 ## 0.1.1
 
 ### Added
