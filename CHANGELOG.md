@@ -1,5 +1,10 @@
 # GoblinBooks changelog
 
+## 0.1.4
+
+### Fixed
+- Pressing Shift while hovering a player or NPC could show a Lua error from Blizzard's tooltip code (`UnitPlayerControlled` ... "Secret values are only allowed during untainted execution"). GoblinBooks redraws the tooltip on Shift to update its item lines, and now does that only for item tooltips.
+
 ## 0.1.3
 
 ### Fixed
