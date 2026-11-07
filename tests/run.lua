@@ -937,5 +937,52 @@ test("your item search waits for the server, retries, and holds background searc
     C_Timer.After, C_AuctionHouse.SendSearchQuery, C_AuctionHouse.IsThrottledMessageSystemReady = saved[1], saved[2], saved[3]
 end)
 
+test("daily AH results: kept per day as sales and deposits happen, and match the flip's profit", function()
+    local ns = S.LoadAddon(ROOT)
+    local CB, c = ns.CostBasis, ns:EnsureChar()
+    local day1, day2 = 1793880000, 1793880000 + 86400
+    CB.AddLot(c, 42, 10, 100, "ah", day1)
+    CB.RecordDeposit(c, 42, "Ore", 50, day1)
+    CB.RecordSale(c, 42, "Ore", 4, 2000, 100, 50, day1)
+    CB.RecordSale(c, 42, "Ore", 8, 4000, 200, 0, day2)   -- 6 covered by lots, 2 without a cost
+    local k1, k2 = ns.Util.DateKey(day1), ns.Util.DateKey(day2)
+    local d1, d2 = c.ahDaily[k1], c.ahDaily[k2]
+    eq(d1.s, 1900); eq(d1.c, 400); eq(d1.dp, 50); eq(d1.dr, 50); eq(d1.n, 4); eq(d1.nc, 0)
+    eq(CB.DayProfit(d1), 1900 - 400 - 50 + 50)
+    eq(d2.n, 8); eq(d2.nc, 2); eq(d2.c, 600)
+    eq(CB.DayProfit(d1) + CB.DayProfit(d2), CB.Profit(c.flips[42]), "days add up to the item's profit")
+    -- Merged across characters.
+    local other = ns:EnsureChar()
+    CB.RecordDeposit(other, 7, "Herb", 30, day2)
+    local merged = CB.AHDaily({ c, other }, { k1, k2, "2000-01-01" })
+    eq(merged[k2].dp, 30)
+    eq(merged[k2].n, 8)
+    eq(merged["2000-01-01"], nil, "empty days are absent")
+end)
+
+test("migration 5 rebuilds daily AH results from the ledger, spreading each item's cost over its sales", function()
+    local ns = S.LoadAddon(ROOT, 0)
+    local c = ns.char
+    local t = 1793880000
+    c.flips[42] = { sold = 10, noCost = 2, cost = 800, i = 42 }    -- 80c per unit sold, 1 in 5 with no cost
+    ns.Ledger.Add(c, { t = t, a = 1900, c = "ah_sale", i = 42, q = 4 })
+    ns.Ledger.Add(c, { t = t, a = -50, c = "ah_deposit", i = 42 })
+    ns.Ledger.Add(c, { t = t + 10, a = 50, c = "ah_deposit", i = 42 })
+    ns.Ledger.Add(c, { t = t + 20, a = 300, c = "ah_sale" })        -- no item: not tied to a flip
+    ns.Ledger.Add(c, { t = t + 30, a = 99, c = "loot" })
+    c.ahDaily = nil
+    GoblinBooksDB.version = 4
+    ns:InitDB()
+    local d = c.ahDaily[ns.Util.DateKey(t)]
+    eq(d.s, 1900, "a sale with no item isn't counted"); eq(d.x, 300, "it's kept apart")
+    eq(d.c, 320); eq(d.dp, 50); eq(d.dr, 50); eq(d.n, 4); eq(d.nc, 1)
+    eq(d.est, true)
+    eq(ns.CostBasis.DayProfit(d), 1900 - 320 - 50 + 50)
+    -- Runs once: days already kept aren't rebuilt.
+    d.s = 1
+    ns.CostBasis.BackfillDaily(c)
+    eq(c.ahDaily[ns.Util.DateKey(t)].s, 1)
+end)
+
 print(("%d passed, %d failed"):format(passed, failed))
 os.exit(failed == 0 and 0 or 1)

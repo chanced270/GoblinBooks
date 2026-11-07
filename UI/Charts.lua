@@ -80,6 +80,9 @@ function Charts.CreateStackedBar(parent)
             self.tex:SetAlpha(0.85)
             GameTooltip:Hide()
         end)
+        seg:SetScript("OnMouseUp", function(self)
+            if f.onClick and self.group then f.onClick(self.group, self.day) end
+        end)
         return seg
     end)
     f.gridLines = Pool(function()
@@ -171,6 +174,7 @@ function Charts.CreateStackedBar(parent)
                     seg:SetSize(barW, max(1, h))
                     seg.tex:SetColorTexture(g.color[1], g.color[2], g.color[3])
                     seg.tex:SetAlpha(0.85)
+                    seg.group, seg.day = g, day
                     seg.tip = self.tipFn and self.tipFn(day, g, val, totals[i]) or {
                         { left = day.label },
                         { left = g.label, right = U.FormatMoney(val, true), r = g.color[1], g = g.color[2], b = g.color[3] },
@@ -178,6 +182,10 @@ function Charts.CreateStackedBar(parent)
                         { left = "Day spending", right = U.FormatMoney(-totals[i].neg) },
                         { left = "Day net", right = U.FormatMoney(net, true) },
                     }
+                    if self.clickHint then
+                        local hint = self.clickHint(g)
+                        if hint then seg.tip[#seg.tip + 1] = { left = hint, r = 0.55, g = 0.58, b = 0.64 } end
+                    end
                 end
             end
             end
@@ -221,11 +229,14 @@ function Charts.CreateShareBar(parent, title)
         seg:EnableMouse(true)
         seg:SetScript("OnEnter", function(self) if self.tip then ShowTooltip(self, self.tip) end end)
         seg:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        seg:SetScript("OnMouseUp", function(self) if f.onClick and self.group then f.onClick(self.group) end end)
         return seg
     end)
     f.legend = Pool(function()
         local row = CreateFrame("Frame", nil, f)
         row:SetHeight(14)
+        row:EnableMouse(true)
+        row:SetScript("OnMouseUp", function(self) if f.onClick and self.group then f.onClick(self.group) end end)
         row.swatch = row:CreateTexture(nil, "ARTWORK")
         row.swatch:SetSize(10, 10)
         row.swatch:SetPoint("LEFT")
@@ -263,14 +274,20 @@ function Charts.CreateShareBar(parent, title)
             seg:SetPoint("TOPLEFT", bar, "TOPLEFT", x, 0)
             seg:SetSize(max(1, w - 1), bar:GetHeight())
             seg.tex:SetColorTexture(g.color[1], g.color[2], g.color[3], 0.9)
+            seg.group = g
             seg.tip = {
                 { left = g.label },
                 { left = "Amount", right = U.FormatMoney(it.value) },
                 { left = "Share", right = ("%.1f%%"):format(pct * 100) },
             }
+            if self.clickHint then
+                local hint = self.clickHint(g)
+                if hint then seg.tip[#seg.tip + 1] = { left = hint, r = 0.55, g = 0.58, b = 0.64 } end
+            end
             x = x + w
 
             local row = self.legend:Acquire()
+            row.group = g
             local col, line = (i - 1) % 2, floor((i - 1) / 2)
             row:ClearAllPoints()
             row:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", col * colW, -6 - line * 15)

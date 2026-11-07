@@ -67,6 +67,16 @@ function C.IsNeutral(cat)
     return g and g.neutral or false
 end
 
+--- The categories in a chart group, sorted by label: { { key, label } }.
+function C.CatsInGroup(groupKey)
+    local out = {}
+    for key, info in pairs(C.cats) do
+        if info.group == groupKey then out[#out + 1] = { key = key, label = info.label } end
+    end
+    table.sort(out, function(a, b) return a.label < b.label end)
+    return out
+end
+
 function C.IsTransfer(cat)
     return C.GroupInfo(C.Group(cat)).transfer == true
 end

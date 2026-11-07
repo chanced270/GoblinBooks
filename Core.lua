@@ -1,7 +1,7 @@
 -- GoblinBooks: core namespace, event dispatch, internal callbacks, saved variables, slash commands.
 local ADDON, ns = ...
 ns.ADDON = ADDON
-ns.VERSION = 4 -- saved-variable schema version
+ns.VERSION = 5 -- saved-variable schema version
 
 local DEFAULT_SETTINGS = {
     retentionDays = 90,   -- raw ledger entries older than this are pruned (daily rollups are kept forever)
@@ -158,10 +158,14 @@ local MIGRATIONS = {
             end
         end
     end,
+    -- 5: daily AH results (char.ahDaily) for the AH profit chart, rebuilt from the ledger's raw entries.
+    [5] = function(db)
+        for _, c in pairs(db.chars or {}) do ns.CostBasis.BackfillDaily(c) end
+    end,
 }
 
 local function NewChar()
-    return { entries = {}, daily = {}, lots = {}, flips = {}, nameToID = {}, awaiting = {}, heldBids = {} }
+    return { entries = {}, daily = {}, lots = {}, flips = {}, nameToID = {}, awaiting = {}, heldBids = {}, ahDaily = {} }
 end
 
 function ns:EnsureChar(c)

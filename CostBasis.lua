@@ -10,6 +10,84 @@ local function FlipKey(itemID, name)
 end
 CB.FlipKey = FlipKey
 
+---------------------------------------------------------------------------
+-- Daily AH results, for the profit-over-time chart:
+--   char.ahDaily[day] = { s = sales after the cut, c = cost of what sold, dp = deposits paid,
+--                         dr = deposits refunded, n = units sold, nc = units sold with no known cost,
+--                         est = true when rebuilt from old ledger entries (cost from the item's average),
+--                         x = sale gold from old entries with no item (several mails at once): no cost is
+--                             known, so it's left out of profit, like the Auction P/L tab leaves it out }
+-- Profit for a day = s - c - dp + dr (the same sum as CB.Profit, per day).
+---------------------------------------------------------------------------
+local DAY_FIELDS = { "s", "c", "dp", "dr", "n", "nc" }
+
+local function AHDay(char, t)
+    char.ahDaily = char.ahDaily or {}
+    local key = ns.Util.DateKey(t or time())
+    local d = char.ahDaily[key]
+    if not d then
+        d = { s = 0, c = 0, dp = 0, dr = 0, n = 0, nc = 0 }
+        char.ahDaily[key] = d
+    end
+    return d
+end
+
+function CB.DayProfit(d)
+    return (d.s or 0) - (d.c or 0) - (d.dp or 0) + (d.dr or 0)
+end
+
+--- Merged daily AH results across chars: { [dayKey] = day } (days with nothing are absent).
+function CB.AHDaily(chars, dayKeys)
+    local out = {}
+    for _, key in ipairs(dayKeys) do
+        local m
+        for _, c in ipairs(chars) do
+            local d = c.ahDaily and c.ahDaily[key]
+            if d then
+                m = m or { s = 0, c = 0, dp = 0, dr = 0, n = 0, nc = 0 }
+                for _, k in ipairs(DAY_FIELDS) do m[k] = m[k] + (d[k] or 0) end
+                if d.est then m.est = true end
+                if d.x then m.x = (m.x or 0) + d.x end
+            end
+        end
+        out[key] = m
+    end
+    return out
+end
+
+--- One-time rebuild of ahDaily from the raw ledger entries (kept 90 days). The cost of each sale isn't
+--- known per day, so each item's recorded cost (and its count of units with no known cost) is spread over
+--- its units sold; the days then add up to the Auction P/L tab's totals. Marked `est`.
+function CB.BackfillDaily(char)
+    if char.ahDaily and next(char.ahDaily) then return end
+    char.ahDaily = {}
+    local perUnit = {} -- [itemID] = { cost per unit sold, share of units with no known cost }
+    for key, f in pairs(char.flips or {}) do
+        local sold = f.sold or 0
+        if sold > 0 then perUnit[key] = { (f.cost or 0) / sold, (f.noCost or 0) / sold } end
+    end
+    for _, e in ipairs(char.entries or {}) do
+        if e.c == "ah_sale" and not e.i then
+            local d = AHDay(char, e.t)
+            d.x, d.est = (d.x or 0) + e.a, true
+        elseif e.c == "ah_sale" then
+            local d = AHDay(char, e.t)
+            local units = e.q or 1
+            d.s, d.n, d.est = d.s + e.a, d.n + units, true
+            local pu = perUnit[e.i]
+            if pu then
+                d.c, d.nc = d.c + Round(pu[1] * units), d.nc + Round(pu[2] * units)
+            else
+                d.nc = d.nc + units
+            end
+        elseif e.c == "ah_deposit" then
+            local d = AHDay(char, e.t)
+            d.est = true
+            if e.a < 0 then d.dp = d.dp - e.a else d.dr = d.dr + e.a end
+        end
+    end
+end
+
 --- Record an acquired lot of `qty` items at `unitCost` copper each.
 function CB.AddLot(char, itemID, qty, unitCost, src, t)
     if not itemID or not qty or qty <= 0 then return end
@@ -126,6 +204,10 @@ function CB.RecordSale(char, itemID, name, count, bid, cut, refund, t, soldAt)
     f.depRefund = f.depRefund + (refund or 0)
     f.noCost = f.noCost + (count - covered)
     f.last = t
+    local d = AHDay(char, t)
+    d.s = d.s + (bid or 0) - (cut or 0)
+    d.c, d.dr = d.c + cost, d.dr + (refund or 0)
+    d.n, d.nc = d.n + count, d.nc + (count - covered)
     CB.cutCache = nil
     return f, cost
 end
@@ -135,6 +217,8 @@ function CB.RecordDeposit(char, itemID, name, amount, t)
     local f = CB.GetFlip(char, itemID, name)
     f.depPaid = f.depPaid + (amount or 0)
     f.last = t
+    local d = AHDay(char, t)
+    d.dp = d.dp + (amount or 0)
     return f
 end
 

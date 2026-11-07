@@ -3,6 +3,8 @@
 ## 0.1.4
 
 ### Added
+- Charts tab, **AH profit**: profit per day from your auction sales (after the cut), minus what the items cost you and the deposits you lost. Hover a day for the breakdown, how many items sold, and any sold with no known cost (counted as free). Your past days are rebuilt from the ledger the first time you log in, with each item's cost spread over its sales, so the totals match the Auction P/L tab.
+- Charts tab, gold flow: click a group (a bar, a share bar or a legend row) to see its own categories day by day, for example Auction House as sales, purchases and deposits. "< All categories" goes back.
 - Flips page: item icons, a name filter, and category and subcategory filters (the auction house's own categories). They only narrow the list, without sending any searches to the server, and the category you pick is remembered.
 
 ### Changed
