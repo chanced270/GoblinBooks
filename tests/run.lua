@@ -876,5 +876,66 @@ test("AH category tree and the local item filter (Flips page)", function()
     AuctionCategories, C_Item.GetItemInfoInstant, C_Item.GetItemInventoryTypeByID = saved[1], saved[2], saved[3]
 end)
 
+test("your item search waits for the server, retries, and holds background searches", function()
+    local ns = S.LoadAddon(ROOT)
+    assert(loadfile(ROOT .. "/AuctionScan.lua"))("GoblinBooks", ns)
+    local AS = ns.AHScan
+    local saved = { C_Timer.After, C_AuctionHouse.SendSearchQuery, C_AuctionHouse.IsThrottledMessageSystemReady }
+    local pending = {}
+    C_Timer.After = function(delay, fn) pending[#pending + 1] = { at = GetTime() + delay, fn = fn } end
+    local function Run(seconds)
+        local stop = GetTime() + seconds
+        while true do
+            table.sort(pending, function(a, b) return a.at < b.at end)
+            local nxt = pending[1]
+            if not nxt or nxt.at > stop then break end
+            table.remove(pending, 1)
+            S.Advance(math.max(0, nxt.at - GetTime()))
+            nxt.fn()
+        end
+        S.Advance(math.max(0, stop - GetTime()))
+    end
+    local sent, ready = {}, false
+    C_AuctionHouse.SendSearchQuery = function(key) sent[#sent + 1] = key.itemID end
+    C_AuctionHouse.IsThrottledMessageSystemReady = function() return ready end
+    local failed = {}
+    ns:Register("AH_SEARCH_FAILED", function(id) failed[#failed + 1] = id end)
+
+    AS.SearchNow({ itemID = 2770 })
+    eq(#sent, 0, "server busy: not sent yet")
+    eq(AS.ForegroundHold(), true, "background searches wait")
+    Run(1)
+    ready = true
+    Run(0.3)
+    eq(#sent, 1, "sent once the server is ready")
+    Run(4.1)
+    eq(#sent, 2, "no answer: sent again")
+    Run(8.5)
+    eq(#sent, 3, "third and last try")
+    eq(#failed, 1, "then it gives up")
+    eq(failed[1], 2770)
+    eq(AS.ForegroundHold(), false)
+
+    -- Answered: no retry, hold released.
+    sent = {}
+    AS.SearchNow({ itemID = 2771 })
+    eq(#sent, 1)
+    C_AuctionHouse.GetNumCommoditySearchResults = function() return 0 end
+    C_AuctionHouse.HasFullCommoditySearchResults = function() return true end
+    S.Fire("COMMODITY_SEARCH_RESULTS_UPDATED", 2771)
+    eq(AS.ForegroundHold(), false, "answered")
+    Run(20)
+    eq(#sent, 1, "no retry after an answer")
+    eq(#failed, 1)
+
+    -- A newer search replaces the open one.
+    sent = {}
+    AS.SearchNow({ itemID = 1 })
+    AS.SearchNow({ itemID = 2 })
+    Run(30)
+    eq(failed[#failed], 2, "only the latest search is retried")
+    C_Timer.After, C_AuctionHouse.SendSearchQuery, C_AuctionHouse.IsThrottledMessageSystemReady = saved[1], saved[2], saved[3]
+end)
+
 print(("%d passed, %d failed"):format(passed, failed))
 os.exit(failed == 0 and 0 or 1)

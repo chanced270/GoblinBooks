@@ -390,7 +390,8 @@ function UI.CreateAHBuy(parent, setStatus)
         d.qty:SetText(r.commodity == false and "" or "1")
         listings:SetData({})
         listings.empty:SetText("Loading listings...")
-        S.Search(r.key)
+        self.searchFailed = nil
+        S.SearchNow(r.key)
         self:Update()
     end
 
@@ -543,7 +544,7 @@ function UI.CreateAHBuy(parent, setStatus)
         end
         d.info:SetText(#parts > 0 and table.concat(parts, "   ") or "No price history yet")
         if not self.listings then
-            SetBuy("Loading listings...", false)
+            SetBuy(self.searchFailed and "Couldn't load listings" or "Loading listings...", false)
             return
         end
 
@@ -600,7 +601,7 @@ function UI.CreateAHBuy(parent, setStatus)
     local function AfterPurchase(msg)
         setStatus(msg)
         f:ResetPurchase()
-        if f.sel then C_Timer.After(0.5, function() if f.sel then S.Search(f.sel.key) end end) end
+        if f.sel then C_Timer.After(0.5, function() if f.sel then S.SearchNow(f.sel.key) end end) end
         f:Update()
     end
     f.AfterPurchase = AfterPurchase
@@ -657,6 +658,13 @@ function UI.CreateAHBuy(parent, setStatus)
     ns:Register("AH_SEARCH_RESULTS", function(itemID, list, isCommodity, bidOnly)
         f:OnListings(itemID, list, isCommodity, bidOnly)
     end)
+    ns:Register("AH_SEARCH_FAILED", function(itemID)
+        if not (f.sel and f.sel.itemID == itemID) or f.listings then return end
+        f.searchFailed = true
+        listings.empty:SetText("The server didn't send this item's listings. Click the item again to retry.")
+        setStatus("|cffff6060No answer from the auction house for this item. Click it again to retry.|r")
+        f:Update()
+    end)
     ns:On("ITEM_KEY_ITEM_INFO_RECEIVED", function()
         if f:IsVisible() then results:Refresh() end
     end)
@@ -671,7 +679,7 @@ function UI.CreateAHBuy(parent, setStatus)
         if f.stage ~= "pricing" then return end
         f.stage = nil
         setStatus("|cffff6060That quantity is no longer available at that price.|r")
-        if f.sel then S.Search(f.sel.key) end
+        if f.sel then S.SearchNow(f.sel.key) end
         f:Update()
     end)
     ns:On("COMMODITY_PURCHASE_SUCCEEDED", function()
@@ -690,7 +698,7 @@ function UI.CreateAHBuy(parent, setStatus)
     function f.AfterBid(msg)
         setStatus(msg)
         f.bidStage = nil
-        if f.sel then C_Timer.After(0.5, function() if f.sel then S.Search(f.sel.key) end end) end
+        if f.sel then C_Timer.After(0.5, function() if f.sel then S.SearchNow(f.sel.key) end end) end
         f:Update()
     end
     ns:On("BID_ADDED", function()

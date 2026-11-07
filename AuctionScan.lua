@@ -119,6 +119,7 @@ local function RecordListings(itemID, listings, isCommodity, bidOnly, complete)
     for _, l in ipairs(bidOnly or {}) do qty = qty + l.qty end
     S.competitor[itemID] = { p = other, t = time() }
     if low then P.Record(itemID, low, qty, ns.Util.ItemName(itemID), nil, complete) end
+    if S.fg and S.fg.id == itemID then S.fg = nil end -- your search was answered
     ns:Fire("AH_SEARCH_RESULTS", itemID, listings, isCommodity, bidOnly or {})
     NotifyPrices()
 end
@@ -151,6 +152,64 @@ function S.Search(itemKey)
     if Enum and Enum.AuctionHouseSortOrder then sorts = { { sortOrder = Enum.AuctionHouseSortOrder.Price, reverseSort = false } } end
     return pcall(AH.SendSearchQuery, itemKey, sorts, true)
 end
+
+---------------------------------------------------------------------------
+-- Your searches (clicking an item on the Buy tab). The server drops a query sent while its request budget
+-- is spent, without an answer, so a search is sent only when it's ready, background searches (Deals
+-- watcher, category scan) wait while yours is open, and it's sent again if no results come back.
+-- Fires "AH_SEARCH_FAILED"(itemID) after the last try.
+--   S.fg = { key, id, tries, sentAt?, since } while one is open (only the latest; a new one replaces it)
+---------------------------------------------------------------------------
+S.FG_RETRY = 4     -- seconds without results before sending again
+S.FG_TRIES = 3     -- sends before giving up
+S.FG_READY_WAIT = 15 -- seconds to wait for the server to be ready before giving up
+
+local function ThrottleReady()
+    if not (AH and AH.IsThrottledMessageSystemReady) then return true end
+    local ok, ready = pcall(AH.IsThrottledMessageSystemReady)
+    return not ok or ready
+end
+
+local function FgFail(fg)
+    if S.fg ~= fg then return end
+    S.fg = nil
+    S.Log("search: no answer", fg.id)
+    ns:Fire("AH_SEARCH_FAILED", fg.id)
+end
+
+local FgPump
+FgPump = function(fg)
+    if S.fg ~= fg then return end -- answered, or replaced by a newer search
+    local now = GetTime()
+    if fg.sentAt and now - fg.sentAt < S.FG_RETRY then
+        C_Timer.After(S.FG_RETRY - (now - fg.sentAt), function() FgPump(fg) end)
+        return
+    end
+    if fg.tries >= S.FG_TRIES then return FgFail(fg) end
+    if not ThrottleReady() then
+        if now - fg.since > S.FG_READY_WAIT then return FgFail(fg) end
+        C_Timer.After(0.2, function() FgPump(fg) end)
+        return
+    end
+    fg.tries, fg.sentAt = fg.tries + 1, now
+    if fg.tries > 1 then S.Log("search: retry", fg.id) end
+    if not S.Search(fg.key) then return FgFail(fg) end
+    C_Timer.After(S.FG_RETRY, function() FgPump(fg) end)
+end
+
+--- Search an item for you: waits for the server, retries, and holds background searches meanwhile.
+function S.SearchNow(itemKey)
+    if not (itemKey and itemKey.itemID) then return false end
+    S.fg = { key = itemKey, id = itemKey.itemID, tries = 0, since = GetTime() }
+    FgPump(S.fg)
+    return true
+end
+
+--- True while one of your searches waits for its answer: background searches should wait.
+function S.ForegroundHold()
+    return S.fg ~= nil
+end
+ns:On("AUCTION_HOUSE_CLOSED", function() S.fg = nil end)
 
 ---------------------------------------------------------------------------
 -- Scan log (saved, newest last): what was requested, what the game blocked, what arrived and when. Read
@@ -431,7 +490,7 @@ local NextCategory
 --- Sends one request when the server is ready; moves on if no page comes back in time.
 local function Send(fn)
     if not cat then return end
-    if not Ready() or GetTime() - lastCatSend < S.CAT_INTERVAL or S.PostingHold() then
+    if not Ready() or GetTime() - lastCatSend < S.CAT_INTERVAL or S.PostingHold() or S.ForegroundHold() then
         C_Timer.After(0.2, function() Send(fn) end)
         return
     end
