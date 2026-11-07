@@ -245,7 +245,10 @@ local clock = debugprofilestop or function() return GetTime() * 1000 end
 ns:On("REPLICATE_ITEM_LIST_UPDATE", function()
     local count = AH.GetNumReplicateItems and AH.GetNumReplicateItems() or 0
     local since = S.requestedAt and math.floor(GetTime() - S.requestedAt)
-    if S.processing then S.Log("full: data event while reading", count) return end
+    if S.processing then
+        S.repeatEvents = (S.repeatEvents or 0) + 1 -- the client repeats this while it loads item details
+        return
+    end
     -- Data from our request, even if it arrived after we gave up waiting (the server was just slow).
     local late = not S.scanning and S.requestedAt and GetTime() - S.requestedAt <= S.LATE_LIMIT
     if not S.scanning and not late then
@@ -253,6 +256,7 @@ ns:On("REPLICATE_ITEM_LIST_UPDATE", function()
         return
     end
     S.Log("full: data arrived", ("%d auctions, %ss after request%s"):format(count, tostring(since), late and " (late)" or ""))
+    S.repeatEvents = 0
     S.scanning, S.processing = true, true
     local n = count
     local lows, qtys, names = {}, {}, {}
@@ -282,7 +286,9 @@ ns:On("REPLICATE_ITEM_LIST_UPDATE", function()
         end
         S.scanning, S.processing, S.requestedAt = false, false, nil
         ns.db.lastScanResult = { t = time(), items = #ids, auctions = n, kind = "full" }
-        S.Log("full: done", ("%d items from %d auctions"):format(#ids, n))
+        S.Log("full: done", ("%d items from %d auctions (%d repeated data events while reading)"):format(
+            #ids, n, S.repeatEvents or 0))
+        S.repeatEvents = 0
         ns:Fire("SCAN_PROGRESS", "done", #ids, n)
         ns:Fire("PRICES_UPDATED")
     end
