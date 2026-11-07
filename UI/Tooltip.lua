@@ -121,10 +121,21 @@ local function AddLines(tt, data)
     end
 end
 
--- Redraw the hovered item tooltip when Shift is pressed or released (out of combat only).
+--- Is the tooltip showing an item? Only those get our lines, so only those need a redraw.
+local function ShowsItem(tt)
+    if not tt.GetItem then return false end
+    local ok, _, link = pcall(tt.GetItem, tt)
+    return ok and link ~= nil
+end
+
+-- Redraw the hovered item tooltip when Shift is pressed or released (out of combat only). Never a unit
+-- tooltip: rebuilding one from addon code hits the client's restricted unit data ("secret values") and
+-- Blizzard's tooltip code errors.
 ns:On("MODIFIER_STATE_CHANGED", function(_, key)
     if InCombatLockdown() or not (key == "LSHIFT" or key == "RSHIFT") then return end
-    if GameTooltip:IsShown() and GameTooltip.RefreshData then pcall(GameTooltip.RefreshData, GameTooltip) end
+    if GameTooltip:IsShown() and GameTooltip.RefreshData and ShowsItem(GameTooltip) then
+        pcall(GameTooltip.RefreshData, GameTooltip)
+    end
 end)
 
 if TooltipDataProcessor and TooltipDataProcessor.AddTooltipPostCall and Enum and Enum.TooltipDataType then
