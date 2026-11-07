@@ -100,9 +100,9 @@ end
 
 ---------------------------------------------------------------------------
 -- Sold auctions on their way to the mailbox. A sale is spotted when your auctions list shows it as
--- sold (only while the AH is open). Its gold arrives after a delay: the auction's own countdown when the
--- client gives one, otherwise the delay learned from your sale mails (mail sent - sale seen).
---   char.pendingSales[auctionID] = { i, n, q, amount, seen, soldAt?, eta, exact, notified? }
+-- sold (only while the AH is open). Its gold arrives after a delay learned from your sale mails
+-- (mail sent - sale seen); the client's own countdown on sold auctions is wrong on WoW Forever.
+--   char.pendingSales[auctionID] = { i, n, q, amount, seen, soldAt?, eta, notified? }
 --   char.activeSeen[auctionID]   = last time the auction was seen still listed
 --   db.mailDelays                = learned delays (seconds), most recent last
 ---------------------------------------------------------------------------
@@ -147,7 +147,8 @@ function AH:TrackOwned()
             local id = a.auctionID
             if a.status == SOLD then
                 local p = c.pendingSales[id]
-                local countdown = a.timeLeftSeconds and a.timeLeftSeconds > 0 and a.timeLeftSeconds or nil
+                -- The client's countdown on sold auctions isn't the mail delay on WoW Forever (it said 3 minutes
+                -- for gold that took an hour), so it's not used: the delay learned from sale mails is.
                 if not p then
                     local itemID = a.itemKey and a.itemKey.itemID
                     local qty = a.quantity or 1
@@ -157,15 +158,18 @@ function AH:TrackOwned()
                         i = itemID, n = LinkName(a.itemLink) or U.ItemName(itemID), q = qty,
                         amount = a.buyoutAmount or a.bidAmount or 0, seen = now, -- sold: already the total
                         soldAt = last and now - last <= 600 and now or nil,
-                        exact = countdown ~= nil,
                     }
-                    p.eta = now + (countdown or AH:MailDelay())
+                    p.eta = now + AH:MailDelay()
                     c.pendingSales[id] = p
                     ns:Fire("PENDING_SALES")
                 else
                     -- Fix pending sales saved before (they multiplied the total by the quantity again).
                     p.amount = a.buyoutAmount or a.bidAmount or p.amount
-                    if countdown and p.exact then p.eta = now + countdown end
+                    -- Saved from the client's countdown: estimate again, and allow one (correct) mailbox alert.
+                    if p.exact then
+                        p.exact, p.notified = nil, nil
+                        p.eta = p.seen + AH:MailDelay()
+                    end
                 end
             else
                 listed[id] = true

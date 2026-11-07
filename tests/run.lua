@@ -472,6 +472,26 @@ test("sold auctions wait for the mailbox and teach the delay", function()
     eq(AH:MailDelay(), 3000, "learned delay")
 end)
 
+test("a sold auction's short client countdown doesn't make the mail alert early", function()
+    local ns = S.LoadAddon(ROOT)
+    local AH = ns.AuctionHouse
+    local owned = { { auctionID = 8, status = 1, timeLeftSeconds = 175, itemKey = { itemID = 6889 }, itemLink = "|Hitem:6889|h[Small Egg]|h", quantity = 4, buyoutAmount = 624 } }
+    C_AuctionHouse.GetNumOwnedAuctions = function() return #owned end
+    C_AuctionHouse.GetOwnedAuctionInfo = function(i) return owned[i] end
+    AH:TrackOwned()
+    local p = ns.char.pendingSales[8]
+    eq(p.eta, S.walltime + 3600, "uses the mail delay, not the 3-minute countdown")
+    eq(p.exact, nil)
+    -- A sale saved by an older version from the countdown is estimated again.
+    ns.char.pendingSales[9] = { n = "Small Egg", q = 4, amount = 624, seen = S.walltime, eta = S.walltime + 175, exact = true, notified = true }
+    owned[2] = { auctionID = 9, status = 1, timeLeftSeconds = 100, itemKey = { itemID = 6889 }, quantity = 4, buyoutAmount = 624 }
+    AH:TrackOwned()
+    local old = ns.char.pendingSales[9]
+    eq(old.eta, S.walltime + 3600)
+    eq(old.exact, nil)
+    eq(old.notified, nil)
+end)
+
 test("crafting moves the reagents' cost into the crafted item", function()
     local ns = S.LoadAddon(ROOT)
     local CB, CR = ns.CostBasis, ns.Crafting
