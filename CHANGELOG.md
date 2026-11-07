@@ -4,6 +4,7 @@
 
 ### Fixed
 - Posting several auctions in a row is quicker: GoblinBooks no longer searches the item's listings and reloads your auctions after every single post (it does it once, 2 seconds after your last post), and the Deals watcher and category scan pause briefly after each post. Posting, searching and scanning share one server request limit, so those extra requests were making the next post wait.
+- "Gold from your sale should be in your mailbox now" no longer shows a few minutes after a sale while the gold is still an hour away. The game's own countdown on sold auctions is wrong on WoW Forever, so GoblinBooks uses the delay it learned from your sale mails. Sales already waiting are estimated again.
 
 ## 0.1.2
 
