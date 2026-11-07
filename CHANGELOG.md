@@ -4,6 +4,7 @@
 
 ### Fixed
 - Pressing Shift while hovering a player or NPC could show a Lua error from Blizzard's tooltip code (`UnitPlayerControlled` ... "Secret values are only allowed during untainted execution"). GoblinBooks redraws the tooltip on Shift to update its item lines, and now does that only for item tooltips.
+- AH Sell tab: some bag items could be missing from the list until a /reload. Items the game hadn't loaded yet (common right after logging in or zoning) were left out because the auction house couldn't check them, and nothing looked again. GoblinBooks now asks the game to load them and refreshes the list when they arrive (and a few seconds later, just in case).
 - AH Sell tab: soulbound and account-bound items are left out of your bag list more reliably. Besides the bag's own flag, GoblinBooks now also asks the item itself and reads its tooltip ("Soulbound"), in case the client gets the flag wrong.
 
 ## 0.1.3

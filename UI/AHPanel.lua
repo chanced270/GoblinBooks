@@ -68,14 +68,29 @@ local function IsBoundSlot(info, loc, bag, slot)
     return false
 end
 
+-- Bag items whose data the client hadn't loaded at the last scan: [itemID] = true. Until it loads, the AH
+-- can't say whether they can be sold (they'd be left out), so the list is scanned again when it arrives.
+local loading = {}
+
+local function NotLoaded(loc)
+    if not (C_Item and C_Item.IsItemDataCached) then return false end
+    local ok, cached = pcall(C_Item.IsItemDataCached, loc)
+    return ok and not cached
+end
+
 local function ScanBags()
     local rows, byKey = {}, {}
+    wipe(loading)
     if not (C_Container and ItemLocation and AH.IsSellItemValid) then return rows end
     for bag = 0, 5 do
         local slots = C_Container.GetContainerNumSlots(bag) or 0
         for slot = 1, slots do
             local info = C_Container.GetContainerItemInfo(bag, slot)
             local loc = info and info.itemID and ItemLocation:CreateFromBagAndSlot(bag, slot)
+            if loc and NotLoaded(loc) then
+                loading[info.itemID] = true
+                if C_Item.RequestLoadItemData then pcall(C_Item.RequestLoadItemData, loc) end
+            end
             if loc and not IsBoundSlot(info, loc, bag, slot) then
                 local ok, valid = pcall(AH.IsSellItemValid, loc, false)
                 if ok and valid then
@@ -418,7 +433,11 @@ local function Post()
 end
 
 local bagsDirty = true
-local function RefreshBags()
+local LOAD_RETRIES = 3     -- rescans while bag items are still loading (besides the load events)
+local LOAD_RETRY_DELAY = 2 -- seconds between them
+local loadRetries = 0
+local RefreshBags
+RefreshBags = function()
     if not panel or not panel:IsShown() then return end
     -- The bag list is only on the Sell page: checking every bag slot with the AH can wait until it's shown.
     if panel.page ~= "sell" then bagsDirty = true return end
@@ -431,7 +450,27 @@ local function RefreshBags()
         for _, r in ipairs(rows) do if r.key == sel.key then match = r end end
     end
     panel.form:SetRow(match)
+    -- Some items weren't loaded yet: look again shortly, in case their load events don't come.
+    if next(loading) and loadRetries < LOAD_RETRIES then
+        loadRetries = loadRetries + 1
+        C_Timer.After(LOAD_RETRY_DELAY, function()
+            if panel and panel:IsShown() and next(loading) then RefreshBags() end
+        end)
+    end
 end
+
+-- A bag item's data arrived: scan again (once for a burst of them).
+local loadPending = false
+local function OnItemLoaded(_, itemID)
+    if not (itemID and loading[itemID]) or loadPending or not panel or not panel:IsShown() then return end
+    loadPending = true
+    C_Timer.After(0.3, function()
+        loadPending = false
+        RefreshBags()
+    end)
+end
+ns:On("ITEM_DATA_LOAD_RESULT", OnItemLoaded)
+ns:On("GET_ITEM_INFO_RECEIVED", OnItemLoaded)
 
 local function Create()
     local p = CreateFrame("Frame", "GoblinBooksAHPanel", UIParent, "BackdropTemplate")
@@ -741,6 +780,7 @@ local function Create()
     p:SetScript("OnShow", function()
         p.pendingConfirm = nil
         bagsDirty = true
+        loadRetries = 0
         RefreshBags()
         -- Your auctions fill the undercut / outbid badge even on another page; ask once the window is drawn.
         C_Timer.After(0.3, function()
