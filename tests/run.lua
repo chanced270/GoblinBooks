@@ -805,5 +805,17 @@ test("category scan of everything: at most once every 5 minutes, even if stopped
 end)
 
 
+test("posting holds background searches for a moment", function()
+    local ns = S.LoadAddon(ROOT)
+    assert(loadfile(ROOT .. "/AuctionScan.lua"))("GoblinBooks", ns)
+    local AHS = ns.AHScan
+    eq(AHS.PostingHold(), false)
+    AHS.postHoldUntil = GetTime() + AHS.POST_HOLD
+    eq(AHS.PostingHold(), true, "right after a post")
+    S.Advance(AHS.POST_HOLD + 0.1)
+    eq(AHS.PostingHold(), false, "released after the hold")
+end)
+
+
 print(("%d passed, %d failed"):format(passed, failed))
 os.exit(failed == 0 and 0 or 1)

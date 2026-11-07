@@ -1,5 +1,10 @@
 # GoblinBooks changelog
 
+## 0.1.3
+
+### Fixed
+- Posting several auctions in a row is quicker: GoblinBooks no longer searches the item's listings and reloads your auctions after every single post (it does it once, 2 seconds after your last post), and the Deals watcher and category scan pause briefly after each post. Posting, searching and scanning share one server request limit, so those extra requests were making the next post wait.
+
 ## 0.1.2
 
 ### Changed

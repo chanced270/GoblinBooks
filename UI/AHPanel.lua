@@ -362,6 +362,9 @@ local function Post()
         return
     end
     panel.depositOK = nil
+    -- Posting goes through the same server request limit as searches: hold background searches (Deals
+    -- watcher, category scan) for a moment so the next post isn't stuck behind them.
+    S.postHoldUntil = GetTime() + S.POST_HOLD
     local ok, err
     if panel.pendingConfirm then
         local c = panel.pendingConfirm
@@ -857,12 +860,20 @@ ns:Register("PRICES_UPDATED", function()
     if panel and panel:IsShown() then panel.list:Refresh() end
 end)
 
+local postRefresh = 0
 ns:On("AUCTION_HOUSE_AUCTION_CREATED", function()
     if not panel then return end
     SetStatus("|cff60ff60Auction posted.|r")
     panel.form.priceSet = true -- keep the user's price while listings refresh
-    local row = panel.form.row
-    if row then C_Timer.After(0.5, function() S.Search(ItemKeyFor(row)) end) end
+    S.postHoldUntil = GetTime() + S.POST_HOLD
+    -- Refresh the listings once you've stopped posting (2s after the last post), not after every post.
+    postRefresh = postRefresh + 1
+    local token = postRefresh
+    C_Timer.After(S.POST_HOLD, function()
+        if token ~= postRefresh or not panel:IsShown() then return end
+        local row = panel.form.row
+        if row then S.Search(ItemKeyFor(row)) end
+    end)
 end)
 
 -- The server asks for confirmation when a price is far below market.

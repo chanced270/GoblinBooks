@@ -443,7 +443,13 @@ function UI.CreateAHAuctions(parent, setStatus, onCount)
         f.selected = nil
         f:Query()
     end)
-    ns:On("AUCTION_HOUSE_AUCTION_CREATED", function() C_Timer.After(0.5, function() f:Query() end) end)
+    -- Refresh your auctions once you've stopped posting (a moment after the last post).
+    local postToken = 0
+    ns:On("AUCTION_HOUSE_AUCTION_CREATED", function()
+        postToken = postToken + 1
+        local token = postToken
+        C_Timer.After(2.5, function() if token == postToken then f:Query() end end)
+    end)
     ns:Register("AH_SEARCH_RESULTS", function()
         if f:IsVisible() then list:Refresh() end
         if not f.checking and f.rows then f:Rebuild() end

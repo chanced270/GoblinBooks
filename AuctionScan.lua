@@ -225,6 +225,13 @@ function S.FullScan()
 end
 
 S.WAIT_LIMIT = 180  -- seconds before a scan with no answer shows as failed
+S.POST_HOLD = 2     -- seconds after a post that background searches wait (posts get the request budget)
+S.postHoldUntil = 0
+
+--- True while you're posting: background searches (Deals watcher, category scan) should wait.
+function S.PostingHold()
+    return GetTime() < (S.postHoldUntil or 0)
+end
 S.LATE_LIMIT = 600  -- seconds after asking that the server's data is still accepted
 
 -- Closing the auction house drops the scan: say so instead of waiting for the timeout.
@@ -371,7 +378,7 @@ local NextCategory
 --- Sends one request when the server is ready; moves on if no page comes back in time.
 local function Send(fn)
     if not cat then return end
-    if not Ready() or GetTime() - lastCatSend < S.CAT_INTERVAL then
+    if not Ready() or GetTime() - lastCatSend < S.CAT_INTERVAL or S.PostingHold() then
         C_Timer.After(0.2, function() Send(fn) end)
         return
     end
