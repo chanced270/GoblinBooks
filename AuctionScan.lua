@@ -439,10 +439,6 @@ function S.CategoryTree()
     return cats
 end
 
-local function Avg(itemID)
-    return P.Average(P.Get(itemID), U.DayKeys(7))
-end
-
 --- Does an item fit any of these AH filters ({ classID, subClassID?, inventoryType? })? Local data only:
 --- no server request. Nil or empty filters match everything; unknown items match nothing.
 function S.ItemMatches(itemID, filters)

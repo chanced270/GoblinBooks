@@ -5,10 +5,8 @@
 ### Added
 - Flips page: item icons, a name filter, and category and subcategory filters (the auction house's own categories). They only narrow the list, without sending any searches to the server, and the category you pick is remembered.
 
-### Fixed
-- Buy tab: picking an item could stay on "Loading listings..." for good. The server silently drops a search sent while its request limit is used up, which happened easily with the Deals watcher running. Your search now waits until the server is ready, the Deals watcher and category scan pause until it's answered, and it's sent again (up to 3 times) when no listings come back. If there's still no answer, the page says so and you can click the item to retry.
-
 ### Changed
+- Buy tab: searching an item gets priority over background searches. It waits until the server is ready, the Deals watcher and category scan pause until it's answered, and it's sent again (up to 3 times) if no listings come back. The server drops a search sent while its request limit is used up, without saying so. If there's still no answer, the page says so and you can click the item to retry.
 - The Buy and Flips pages share one category list, and the Deals and Flips pages share one item icon helper.
 
 ## 0.1.3

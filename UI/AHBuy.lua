@@ -27,6 +27,10 @@ local function ResultName(r)
     return r.name or ("item:" .. r.itemID)
 end
 
+local function Avg(itemID)
+    return P.Average(P.Get(itemID), U.DayKeys(7))
+end
+
 function UI.CreateAHBuy(parent, setStatus)
     local f = CreateFrame("Frame", nil, parent)
 
