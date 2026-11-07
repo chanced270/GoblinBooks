@@ -6,6 +6,7 @@
 - A category scan of **every category** can start at most once every 5 minutes (counted from when it starts), to keep the number of searches sent to the server reasonable. Crafting-market scans aren't limited.
 
 ### Fixed
+- The Scan tooltip called a category scan's total "auctions"; it's the number of units listed (category searches don't report auction counts).
 - Dropdown menus (like the scan type menu next to Scan) widen to fit their options instead of wrapping them onto overlapping lines, and stay on screen.
 
 ## 0.1.1

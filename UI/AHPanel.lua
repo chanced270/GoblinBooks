@@ -515,8 +515,11 @@ local function Create()
         end
         local last = ns.db.lastScanResult
         if last and not S.scanning and not S.catScanning then
-            GameTooltip:AddLine(("Last %s %s: %s items from %s auctions"):format(last.kind == "categories" and "category scan" or "scan",
-                U.Ago(last.t), U.CommaNumber(last.items), U.CommaNumber(last.auctions)), 0.55, 0.58, 0.64, true)
+            -- A full scan counts auctions; category searches only report units listed (stacks added up).
+            local categories = last.kind == "categories"
+            GameTooltip:AddLine(("Last %s %s: %s items, %s %s"):format(categories and "category scan" or "full scan",
+                U.Ago(last.t), U.CommaNumber(last.items), U.CommaNumber(last.auctions),
+                categories and "units listed" or "auctions"), 0.55, 0.58, 0.64, true)
         end
         GameTooltip:Show()
     end)
