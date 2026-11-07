@@ -43,6 +43,31 @@ local function PlainName(row)
     return (GetInfo(row.itemID) or (row.link and row.link:match("%[(.-)%]")) or ""):lower()
 end
 
+-- Tooltip lines that mean an item can't go on the auction house.
+local BOUND_LINES = {}
+for _, name in ipairs({ "ITEM_SOULBOUND", "ITEM_ACCOUNTBOUND", "ITEM_BNETACCOUNTBOUND", "ITEM_BIND_TO_ACCOUNT",
+                        "ITEM_BIND_TO_BNETACCOUNT", "ITEM_ACCOUNTBOUND_UNTIL_EQUIP" }) do
+    local text = _G[name]
+    if type(text) == "string" then BOUND_LINES[text] = true end
+end
+
+--- Soulbound or account bound? The slot's flag first, then the item itself, then its tooltip text
+--- (in case the client's flags are wrong for some items).
+local function IsBoundSlot(info, loc, bag, slot)
+    if info.isBound then return true end
+    if C_Item and C_Item.IsBound then
+        local ok, bound = pcall(C_Item.IsBound, loc)
+        if ok and bound then return true end
+    end
+    if C_TooltipInfo and C_TooltipInfo.GetBagItem then
+        local ok, data = pcall(C_TooltipInfo.GetBagItem, bag, slot)
+        for _, line in ipairs(ok and data and data.lines or {}) do
+            if line.leftText and BOUND_LINES[line.leftText] then return true end
+        end
+    end
+    return false
+end
+
 local function ScanBags()
     local rows, byKey = {}, {}
     if not (C_Container and ItemLocation and AH.IsSellItemValid) then return rows end
@@ -50,8 +75,8 @@ local function ScanBags()
         local slots = C_Container.GetContainerNumSlots(bag) or 0
         for slot = 1, slots do
             local info = C_Container.GetContainerItemInfo(bag, slot)
-            if info and info.itemID and not info.isBound then
-                local loc = ItemLocation:CreateFromBagAndSlot(bag, slot)
+            local loc = info and info.itemID and ItemLocation:CreateFromBagAndSlot(bag, slot)
+            if loc and not IsBoundSlot(info, loc, bag, slot) then
                 local ok, valid = pcall(AH.IsSellItemValid, loc, false)
                 if ok and valid then
                     local commodity = IsCommodity(loc, info.itemID)
