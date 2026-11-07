@@ -4,6 +4,7 @@
 
 ### Fixed
 - Pressing Shift while hovering a player or NPC could show a Lua error from Blizzard's tooltip code (`UnitPlayerControlled` ... "Secret values are only allowed during untainted execution"). GoblinBooks redraws the tooltip on Shift to update its item lines, and now does that only for item tooltips.
+- AH Sell tab: soulbound and account-bound items are left out of your bag list more reliably. Besides the bag's own flag, GoblinBooks now also asks the item itself and reads its tooltip ("Soulbound"), in case the client gets the flag wrong.
 
 ## 0.1.3
 
