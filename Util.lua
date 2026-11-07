@@ -157,3 +157,10 @@ function U.ItemName(itemID)
     end
     return nil
 end
+
+--- "|T...|t  " icon text for an item (16px), or "" when the client can't say.
+function U.ItemIcon(itemID)
+    if not (itemID and C_Item and C_Item.GetItemIconByID) then return "" end
+    local ok, icon = pcall(C_Item.GetItemIconByID, itemID)
+    return ok and icon and ("|T%s:16:16:0:0|t  "):format(icon) or ""
+end

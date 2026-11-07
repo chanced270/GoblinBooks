@@ -355,6 +355,59 @@ function S.Categories()
     return cats
 end
 
+--- { { label, filters, subs = { { label, filters } } } } for category dropdowns (Buy and Flips pages).
+function S.CategoryTree()
+    local cats = {}
+    if type(AuctionCategories) == "table" then
+        for _, c in ipairs(AuctionCategories) do
+            if c.name and type(c.filters) == "table" and #c.filters > 0 then
+                local subs = {}
+                for _, sc in ipairs(c.subCategories or {}) do
+                    if sc.name and type(sc.filters) == "table" and #sc.filters > 0 then
+                        subs[#subs + 1] = { label = sc.name, filters = sc.filters }
+                    end
+                end
+                cats[#cats + 1] = { label = c.name, filters = c.filters, subs = subs }
+            end
+        end
+    end
+    if #cats == 0 and C_Item and C_Item.GetItemClassInfo then
+        for _, id in ipairs({ 2, 4, 1, 3, 8, 0, 16, 7, 9, 17, 12, 15 }) do
+            local ok, name = pcall(C_Item.GetItemClassInfo, id)
+            if ok and name then cats[#cats + 1] = { label = name, filters = { { classID = id } }, subs = {} } end
+        end
+    end
+    return cats
+end
+
+local function Avg(itemID)
+    return P.Average(P.Get(itemID), U.DayKeys(7))
+end
+
+--- Does an item fit any of these AH filters ({ classID, subClassID?, inventoryType? })? Local data only:
+--- no server request. Nil or empty filters match everything; unknown items match nothing.
+function S.ItemMatches(itemID, filters)
+    if not filters or #filters == 0 then return true end
+    if not (itemID and C_Item and C_Item.GetItemInfoInstant) then return false end
+    local ok, _, _, _, _, _, classID, subClassID = pcall(C_Item.GetItemInfoInstant, itemID)
+    if not ok or classID == nil then return false end
+    local invType
+    for _, f in ipairs(filters) do
+        if (f.classID == nil or f.classID == classID) and (f.subClassID == nil or f.subClassID == subClassID) then
+            if f.inventoryType == nil then return true end
+            if invType == nil then
+                local fn = C_Item.GetItemInventoryTypeByID
+                local ok2, t = false, nil
+                if fn then ok2, t = pcall(fn, itemID) end
+                invType = ok2 and t or false
+            end
+            -- The client can't tell the slot: let it through rather than hide it.
+            if invType == false or invType == f.inventoryType then return true end
+        end
+    end
+    return false
+end
+
 local function CategoriesFor(mode)
     local out = {}
     for _, c in ipairs(S.Categories()) do

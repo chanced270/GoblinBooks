@@ -837,5 +837,44 @@ test("posting holds background searches for a moment", function()
 end)
 
 
+test("AH category tree and the local item filter (Flips page)", function()
+    local ns = S.LoadAddon(ROOT)
+    assert(loadfile(ROOT .. "/AuctionScan.lua"))("GoblinBooks", ns)
+    local AS = ns.AHScan
+    local saved = { AuctionCategories, C_Item.GetItemInfoInstant, C_Item.GetItemInventoryTypeByID }
+    AuctionCategories = {
+        { name = "Armor", filters = { { classID = 4 } }, subCategories = {
+            { name = "Head", filters = { { classID = 4, inventoryType = 1 } } },
+            { name = "Broken", filters = {} },
+        } },
+        { name = "Trade Goods", filters = { { classID = 7 } }, subCategories = {
+            { name = "Metal & Stone", filters = { { classID = 7, subClassID = 7 } } },
+        } },
+        { name = "Empty", filters = {} },
+    }
+    local tree = AS.CategoryTree()
+    eq(#tree, 2, "categories without filters are skipped")
+    eq(tree[1].label, "Armor")
+    eq(#tree[1].subs, 1, "subcategories without filters are skipped")
+    -- itemID -> classID, subClassID, inventory type
+    local items = { [2770] = { 7, 7 }, [2589] = { 7, 5 }, [10] = { 4, 1, 1 }, [11] = { 4, 1, 5 } }
+    C_Item.GetItemInfoInstant = function(id)
+        local it = items[id]
+        if it then return id, "t", "s", "", 0, it[1], it[2] end
+    end
+    C_Item.GetItemInventoryTypeByID = function(id) return items[id] and items[id][3] end
+    eq(AS.ItemMatches(2770, nil), true, "no filter: everything")
+    eq(AS.ItemMatches(2770, tree[2].filters), true, "Copper Ore is a trade good")
+    eq(AS.ItemMatches(10, tree[2].filters), false, "a helm is not")
+    eq(AS.ItemMatches(2770, tree[2].subs[1].filters), true, "metal & stone")
+    eq(AS.ItemMatches(2589, tree[2].subs[1].filters), false, "cloth isn't metal & stone")
+    eq(AS.ItemMatches(10, tree[1].subs[1].filters), true, "head slot")
+    eq(AS.ItemMatches(11, tree[1].subs[1].filters), false, "chest isn't head")
+    eq(AS.ItemMatches(999, tree[2].filters), false, "unknown item")
+    C_Item.GetItemInventoryTypeByID = nil
+    eq(AS.ItemMatches(11, tree[1].subs[1].filters), true, "slot unknown: shown rather than hidden")
+    AuctionCategories, C_Item.GetItemInfoInstant, C_Item.GetItemInventoryTypeByID = saved[1], saved[2], saved[3]
+end)
+
 print(("%d passed, %d failed"):format(passed, failed))
 os.exit(failed == 0 and 0 or 1)

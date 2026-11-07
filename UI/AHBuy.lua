@@ -27,35 +27,6 @@ local function ResultName(r)
     return r.name or ("item:" .. r.itemID)
 end
 
---- { { label, filters, subs = { { label, filters } } } } for the category dropdowns.
-local function BuildCategories()
-    local cats = {}
-    if type(AuctionCategories) == "table" then
-        for _, c in ipairs(AuctionCategories) do
-            if c.name and type(c.filters) == "table" and #c.filters > 0 then
-                local subs = {}
-                for _, sc in ipairs(c.subCategories or {}) do
-                    if sc.name and type(sc.filters) == "table" and #sc.filters > 0 then
-                        subs[#subs + 1] = { label = sc.name, filters = sc.filters }
-                    end
-                end
-                cats[#cats + 1] = { label = c.name, filters = c.filters, subs = subs }
-            end
-        end
-    end
-    if #cats == 0 and C_Item and C_Item.GetItemClassInfo then
-        for _, id in ipairs({ 2, 4, 1, 3, 8, 0, 16, 7, 9, 17, 12, 15 }) do
-            local ok, name = pcall(C_Item.GetItemClassInfo, id)
-            if ok and name then cats[#cats + 1] = { label = name, filters = { { classID = id } }, subs = {} } end
-        end
-    end
-    return cats
-end
-
-local function Avg(itemID)
-    return P.Average(P.Get(itemID), U.DayKeys(7))
-end
-
 function UI.CreateAHBuy(parent, setStatus)
     local f = CreateFrame("Frame", nil, parent)
 
@@ -70,7 +41,7 @@ function UI.CreateAHBuy(parent, setStatus)
     end)
 
     -- Category filters + favorites.
-    local cats = BuildCategories()
+    local cats = S.CategoryTree()
     local catOpts = { { key = "all", label = "All categories" } }
     for i, c in ipairs(cats) do catOpts[#catOpts + 1] = { key = i, label = c.label } end
     f.catDrop = W.Dropdown(f, 116, function(key)

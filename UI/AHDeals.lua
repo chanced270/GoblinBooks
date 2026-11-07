@@ -9,11 +9,7 @@ local AH = C_AuctionHouse
 local GREEN, GOLD = { 0.38, 1, 0.38 }, { 1, 0.78, 0.25 }
 
 local function Name(id) return U.ItemName(id) or ("item:" .. id) end
-local function Icon(id)
-    if not (C_Item and C_Item.GetItemIconByID) then return "" end
-    local ok, icon = pcall(C_Item.GetItemIconByID, id)
-    return ok and icon and ("|T%s:16:16:0:0|t  "):format(icon) or ""
-end
+local Icon = U.ItemIcon
 
 function UI.CreateAHDeals(parent, setStatus)
     local D = ns.Deals

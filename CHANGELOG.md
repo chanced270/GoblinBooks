@@ -1,5 +1,13 @@
 # GoblinBooks changelog
 
+## 0.1.4
+
+### Added
+- Flips page: item icons, a name filter, and category and subcategory filters (the auction house's own categories). They only narrow the list, without sending any searches to the server, and the category you pick is remembered.
+
+### Changed
+- The Buy and Flips pages share one category list, and the Deals and Flips pages share one item icon helper.
+
 ## 0.1.3
 
 ### Fixed
