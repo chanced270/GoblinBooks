@@ -878,8 +878,9 @@ ns:Register("SCAN_PROGRESS", function(state, done, total)
     if not panel then return end
     if scanResetTimer then scanResetTimer:Cancel() scanResetTimer = nil end
     if state == "waiting" then
-        panel.scanInfo = "Waiting for the server to send the auctions..."
-        ScanButton("Waiting...", 0)
+        local waited = done or 0
+        panel.scanInfo = ("Waiting for the server to send the auctions (%ds). A big auction house can take a minute or two."):format(waited)
+        ScanButton(waited >= 5 and ("Waiting %ds"):format(waited) or "Waiting...", 0)
     elseif state == "reading" or state == "saving" then
         local pct = ScanPercent(state, done, total)
         panel.scanInfo = state == "reading"

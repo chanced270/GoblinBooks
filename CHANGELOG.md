@@ -1,5 +1,11 @@
 # GoblinBooks changelog
 
+## 0.1.1
+
+### Fixed
+- Full scan no longer shows **Failed** when the server is slow to answer. A big auction house can take over a minute before the data starts arriving; the scan used to give up after 60 seconds and ignore the data when it came. It now waits up to 3 minutes (the Scan button shows how long), and still uses data that arrives after that.
+- Closing the auction house while a scan is waiting now ends it with a clear message.
+
 ## 0.1.0 — First release
 
 ### Gold ledger

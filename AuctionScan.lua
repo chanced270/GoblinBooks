@@ -164,26 +164,47 @@ function S.FullScan()
     local ready, left = S.FullScanReady()
     if not ready then return false, ("full scan available in %dm %ds"):format(math.floor(left / 60), left % 60) end
     S.scanning, S.processing = true, false
+    local requested = GetTime()
+    S.requestedAt = requested
     ns.db.lastFullScan = time()
-    ns:Fire("SCAN_PROGRESS", "waiting")
+    ns:Fire("SCAN_PROGRESS", "waiting", 0)
     -- Ask the server on the next frame, so the "waiting" status is drawn before the client gets busy.
     C_Timer.After(0, function()
         local ok, err = pcall(AH.ReplicateItems)
         if not ok then
-            S.scanning = false
+            S.scanning, S.requestedAt = false, nil
             ns.db.lastFullScan = nil
             ns:Fire("SCAN_PROGRESS", "failed", tostring(err))
         end
     end)
-    -- If the server never answers, give up after a while.
-    C_Timer.After(60, function()
-        if S.scanning and not S.processing then
+    -- A big auction house can take the server a minute or more to answer: show how long it's been, and
+    -- only call it failed after WAIT_LIMIT. Even then, data that still arrives is used (see below).
+    local function Tick()
+        if S.requestedAt ~= requested or not S.scanning or S.processing then return end
+        local waited = GetTime() - requested
+        if waited >= S.WAIT_LIMIT then
             S.scanning = false
-            ns:Fire("SCAN_PROGRESS", "failed")
+            ns:Fire("SCAN_PROGRESS", "failed", ("no answer from the server after %d seconds"):format(S.WAIT_LIMIT))
+            return
         end
-    end)
+        ns:Fire("SCAN_PROGRESS", "waiting", math.floor(waited))
+        C_Timer.After(5, Tick)
+    end
+    C_Timer.After(5, Tick)
     return true
 end
+
+S.WAIT_LIMIT = 180  -- seconds before a scan with no answer shows as failed
+S.LATE_LIMIT = 600  -- seconds after asking that the server's data is still accepted
+
+-- Closing the auction house drops the scan: say so instead of waiting for the timeout.
+ns:On("AUCTION_HOUSE_CLOSED", function()
+    if S.requestedAt and not S.processing then
+        local wasWaiting = S.scanning
+        S.scanning, S.requestedAt = false, nil
+        if wasWaiting then ns:Fire("SCAN_PROGRESS", "failed", "the auction house was closed before the data arrived") end
+    end
+end)
 
 -- Work in small time slices (BUDGET_MS per frame) so the game keeps drawing and the status line updates.
 -- A big auction house has tens of thousands of auctions; reading or saving them in one go froze the client.
@@ -191,8 +212,11 @@ local BUDGET_MS = 12
 local clock = debugprofilestop or function() return GetTime() * 1000 end
 
 ns:On("REPLICATE_ITEM_LIST_UPDATE", function()
-    if not S.scanning or S.processing then return end
-    S.processing = true
+    if S.processing then return end
+    -- Data from our request, even if it arrived after we gave up waiting (the server was just slow).
+    local late = not S.scanning and S.requestedAt and GetTime() - S.requestedAt <= S.LATE_LIMIT
+    if not S.scanning and not late then return end
+    S.scanning, S.processing = true, true
     local n = AH.GetNumReplicateItems() or 0
     local lows, qtys, names = {}, {}, {}
     local i = 0
@@ -219,7 +243,7 @@ ns:On("REPLICATE_ITEM_LIST_UPDATE", function()
             C_Timer.After(0, Save)
             return
         end
-        S.scanning, S.processing = false, false
+        S.scanning, S.processing, S.requestedAt = false, false, nil
         ns:Fire("SCAN_PROGRESS", "done", #ids, n)
         ns:Fire("PRICES_UPDATED")
     end

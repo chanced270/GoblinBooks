@@ -670,5 +670,47 @@ test("migration 4 moves sender-less mail money next to AH sales into AH sales", 
 end)
 
 
+test("full scan: a slow server's data is still used, and closing the AH ends the wait", function()
+    local ns = S.LoadAddon(ROOT)
+    assert(loadfile(ROOT .. "/AuctionScan.lua"))("GoblinBooks", ns)
+    local after, pending = C_Timer.After, {}
+    C_Timer.After = function(delay, fn) if delay <= 0 then fn() else pending[#pending + 1] = fn end end
+    C_AuctionHouse.ReplicateItems = function() end
+    C_AuctionHouse.GetNumReplicateItems = function() return 1 end
+    C_AuctionHouse.GetReplicateItemInfo = function()
+        return "Ore", nil, 5, nil, nil, nil, nil, nil, nil, 500, nil, nil, nil, nil, nil, nil, 2770
+    end
+    local states = {}
+    ns:Register("SCAN_PROGRESS", function(state) states[#states + 1] = state end)
+    local function RunTimers(seconds)
+        S.Advance(seconds)
+        local list = pending
+        pending = {}
+        for _, fn in ipairs(list) do fn() end
+    end
+
+    -- No answer for longer than the wait limit: shown as failed...
+    ns.db.lastFullScan = nil
+    eq(ns.AHScan.FullScan(), true)
+    for _ = 1, ns.AHScan.WAIT_LIMIT / 5 do RunTimers(5) end
+    eq(states[#states], "failed")
+    eq(ns.AHScan.scanning, false)
+    -- ...but the data arriving afterwards is still read and saved.
+    S.Fire("REPLICATE_ITEM_LIST_UPDATE")
+    eq(states[#states], "done")
+    eq(ns.Prices.Get(2770).p, 100)
+
+    -- Closing the auction house while waiting ends the scan with a clear reason; later data is ignored.
+    ns.db.lastFullScan = nil
+    eq(ns.AHScan.FullScan(), true)
+    S.Fire("AUCTION_HOUSE_CLOSED")
+    eq(states[#states], "failed")
+    local n = #states
+    S.Fire("REPLICATE_ITEM_LIST_UPDATE")
+    eq(#states, n, "no scan running")
+    C_Timer.After = after
+end)
+
+
 print(("%d passed, %d failed"):format(passed, failed))
 os.exit(failed == 0 and 0 or 1)
