@@ -2,6 +2,9 @@
 
 ## 0.1.1
 
+### Added
+- **Category scan**: an alternative to the full scan. It searches the auction house one category at a time, saving prices as it goes, with no 15-minute cooldown. Pick the scan type with the arrow next to the Scan button: **Full scan**, **Category scan: crafting markets** (trade goods, consumables, recipes, gems, reagents, item enhancements) or **Category scan: every category**. The button shows its progress; click it again to stop (prices found so far are kept). The Deals watcher waits while it runs.
+
 ### Fixed
 - Full scan no longer shows **Failed** when the server is slow to answer. A big auction house can take over a minute before the data starts arriving; the scan used to give up after 60 seconds and ignore the data when it came. It now waits up to 3 minutes (the Scan button shows how long), and still uses data that arrives after that.
 - Closing the auction house while a scan is waiting now ends it with a clear message.

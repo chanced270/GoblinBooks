@@ -31,6 +31,7 @@ local function RecordBrowse(results)
         local key = r.itemKey
         if key and key.itemID and not IsPet(key) and r.minPrice then
             P.Record(key.itemID, r.minPrice, r.totalQuantity, nil, now, true)
+            if S.OnCategoryItem then S.OnCategoryItem(key.itemID, r.totalQuantity) end
         end
     end
     NotifyPrices()
@@ -39,10 +40,12 @@ end
 ns:On("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED", function()
     if AH and AH.GetBrowseResults then RecordBrowse(AH.GetBrowseResults()) end
     ns:Fire("AH_BROWSE_UPDATED")
+    if S.OnCategoryPage then S.OnCategoryPage() end
 end)
 ns:On("AUCTION_HOUSE_BROWSE_RESULTS_ADDED", function(_, added)
     RecordBrowse(added)
     ns:Fire("AH_BROWSE_UPDATED")
+    if S.OnCategoryPage then S.OnCategoryPage() end
 end)
 
 --- Text and/or category search (results arrive via "AH_BROWSE_UPDATED"; read them with
@@ -244,6 +247,7 @@ ns:On("REPLICATE_ITEM_LIST_UPDATE", function()
             return
         end
         S.scanning, S.processing, S.requestedAt = false, false, nil
+        ns.db.lastScanResult = { t = time(), items = #ids, auctions = n, kind = "full" }
         ns:Fire("SCAN_PROGRESS", "done", #ids, n)
         ns:Fire("PRICES_UPDATED")
     end
@@ -271,4 +275,147 @@ ns:On("REPLICATE_ITEM_LIST_UPDATE", function()
         C_Timer.After(0, Save)
     end
     Read()
+end)
+
+---------------------------------------------------------------------------
+-- Category scan: the same searches as the Buy page, one category at a time (every page of each), instead
+-- of the full snapshot. No 15-minute cooldown, prices are saved as each page arrives, and stopping keeps
+-- what was found. Paced by the server's search throttle; the Deals watcher waits while it runs.
+-- mode: "all" (every category) or "crafting" (trade goods, consumables, recipes, gems, reagents,
+-- item enhancements).
+---------------------------------------------------------------------------
+S.CAT_INTERVAL = 0.6 -- seconds between requests (the server throttles faster ones)
+S.CAT_TIMEOUT = 12   -- seconds to wait for a page before moving on
+local CRAFTING_CLASSES = { [7] = true, [0] = true, [9] = true, [3] = true, [5] = true, [8] = true }
+
+--- Top-level AH categories: { { label, filters } } (from the game's category list, or item classes).
+function S.Categories()
+    local cats = {}
+    if type(AuctionCategories) == "table" then
+        for _, c in ipairs(AuctionCategories) do
+            if c.name and type(c.filters) == "table" and #c.filters > 0 then
+                cats[#cats + 1] = { label = c.name, filters = c.filters }
+            end
+        end
+    end
+    if #cats == 0 and C_Item and C_Item.GetItemClassInfo then
+        for _, id in ipairs({ 2, 4, 1, 3, 8, 0, 16, 7, 9, 17, 12, 15, 5 }) do
+            local ok, name = pcall(C_Item.GetItemClassInfo, id)
+            if ok and name then cats[#cats + 1] = { label = name, filters = { { classID = id } } } end
+        end
+    end
+    return cats
+end
+
+local function CategoriesFor(mode)
+    local out = {}
+    for _, c in ipairs(S.Categories()) do
+        local class = c.filters[1] and c.filters[1].classID
+        if mode == "all" or (class ~= nil and CRAFTING_CLASSES[class]) then out[#out + 1] = c end
+    end
+    return out
+end
+
+local cat -- the running category scan: { list, i, items = { [itemID] = true }, count, auctions, token, waiting }
+local lastCatSend = 0
+
+local function Ready()
+    if not (AH and AH.IsThrottledMessageSystemReady) then return true end
+    local ok, ready = pcall(AH.IsThrottledMessageSystemReady)
+    return not ok or ready
+end
+
+local NextCategory
+
+--- Sends one request when the server is ready; moves on if no page comes back in time.
+local function Send(fn)
+    if not cat then return end
+    if not Ready() or GetTime() - lastCatSend < S.CAT_INTERVAL then
+        C_Timer.After(0.2, function() Send(fn) end)
+        return
+    end
+    lastCatSend = GetTime()
+    cat.token = cat.token + 1
+    local token = cat.token
+    cat.waiting = true
+    pcall(fn)
+    C_Timer.After(S.CAT_TIMEOUT, function()
+        if cat and cat.token == token and cat.waiting then
+            cat.waiting = false
+            NextCategory()
+        end
+    end)
+end
+
+local function Report()
+    local c = cat.list[cat.i]
+    ns:Fire("SCAN_PROGRESS", "categories", cat.i, #cat.list, c and c.label, cat.count)
+end
+
+local function Finish(state)
+    local done = cat
+    cat = nil
+    S.catScanning = false
+    ns.db.lastScanResult = { t = time(), items = done.count, auctions = done.auctions, kind = "categories" }
+    ns:Fire("SCAN_PROGRESS", state, done.count, done.auctions)
+    ns:Fire("PRICES_UPDATED")
+end
+
+function NextCategory()
+    if not cat then return end
+    cat.i = cat.i + 1
+    if cat.i > #cat.list then
+        Finish("done")
+        return
+    end
+    Report()
+    local filters = cat.list[cat.i].filters
+    Send(function() S.Browse("", filters) end)
+end
+
+function S.OnCategoryItem(itemID, qty)
+    if not cat or not cat.waiting then return end
+    if not cat.items[itemID] then
+        cat.items[itemID] = true
+        cat.count = cat.count + 1
+    end
+    cat.auctions = cat.auctions + (qty or 0)
+end
+
+--- A page of browse results arrived: ask for the next page, or go to the next category.
+function S.OnCategoryPage()
+    if not cat or not cat.waiting then return end
+    cat.waiting = false
+    local full = true
+    if AH.HasFullBrowseResults then
+        local ok, v = pcall(AH.HasFullBrowseResults)
+        full = not ok or v
+    end
+    if full then
+        C_Timer.After(0, NextCategory)
+    else
+        Report()
+        Send(function() AH.RequestMoreBrowseResults() end)
+    end
+end
+
+--- Starts a category scan. Returns true, or false and why not.
+function S.CategoryScan(mode)
+    if not (AH and AH.SendBrowseQuery) then return false, "searching isn't supported by this client" end
+    if S.scanning or cat then return false, "a scan is already running" end
+    local list = CategoriesFor(mode or "all")
+    if #list == 0 then return false, "no auction house categories found" end
+    cat = { list = list, i = 0, items = {}, count = 0, auctions = 0, token = 0, waiting = false }
+    S.catScanning = true
+    NextCategory()
+    return true
+end
+
+--- Stops a category scan; the prices found so far are kept.
+function S.StopCategoryScan()
+    if cat then Finish("stopped") end
+end
+
+ns:On("AUCTION_HOUSE_CLOSED", function()
+    if cat then Finish("stopped") end
 end)

@@ -712,5 +712,66 @@ test("full scan: a slow server's data is still used, and closing the AH ends the
 end)
 
 
+test("category scan: pages through each chosen category, then finishes; it can be stopped", function()
+    local ns = S.LoadAddon(ROOT)
+    assert(loadfile(ROOT .. "/AuctionScan.lua"))("GoblinBooks", ns)
+    local after, pending = C_Timer.After, {}
+    C_Timer.After = function(delay, fn) if delay <= 0 then fn() else pending[#pending + 1] = fn end end
+    local function RunTimers(seconds)
+        S.Advance(seconds)
+        local list = pending
+        pending = {}
+        for _, fn in ipairs(list) do fn() end
+    end
+    AuctionCategories = {
+        { name = "Weapons", filters = { { classID = 2 } } },
+        { name = "Trade Goods", filters = { { classID = 7 } } },
+        { name = "Consumables", filters = { { classID = 0 } } },
+    }
+    local queries, more, results, full = {}, 0, {}, false
+    C_AuctionHouse.SendBrowseQuery = function(q) queries[#queries + 1] = q.itemClassFilters[1].classID end
+    C_AuctionHouse.GetBrowseResults = function() return results end
+    C_AuctionHouse.HasFullBrowseResults = function() return full end
+    C_AuctionHouse.RequestMoreBrowseResults = function() more = more + 1 end
+    C_AuctionHouse.IsThrottledMessageSystemReady = function() return true end
+    local function Row(id, price, qty) return { itemKey = { itemID = id }, minPrice = price, totalQuantity = qty } end
+    local states = {}
+    ns:Register("SCAN_PROGRESS", function(state) states[#states + 1] = state end)
+
+    -- Crafting markets: Trade Goods and Consumables only (not Weapons).
+    eq(ns.AHScan.CategoryScan("crafting"), true)
+    eq(ns.AHScan.catScanning, true)
+    eq(queries[1], 7)
+    -- Trade Goods: two pages.
+    results, full = { Row(2770, 500, 10), Row(2771, 900, 4) }, false
+    S.Fire("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
+    RunTimers(1) -- waits for the request spacing, then asks for the next page
+    eq(more, 1)
+    full = true
+    S.Fire("AUCTION_HOUSE_BROWSE_RESULTS_ADDED", { Row(2772, 300, 20) })
+    eq(queries[2], nil, "requests stay spaced out")
+    RunTimers(1)
+    eq(queries[2], 0, "then Consumables")
+    results = { Row(118, 50, 40) }
+    S.Fire("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
+    eq(#queries, 2, "Weapons skipped")
+    eq(states[#states], "done")
+    eq(ns.AHScan.catScanning, false)
+    eq(ns.db.lastScanResult.items, 4)
+    eq(ns.db.lastScanResult.auctions, 74)
+    eq(ns.db.lastScanResult.kind, "categories")
+    eq(ns.Prices.Get(2772).p, 300)
+
+    -- Stopping keeps what was found and frees the search budget.
+    eq(ns.AHScan.CategoryScan("all"), true)
+    eq(ns.AHScan.CategoryScan("all"), false, "one at a time")
+    ns.AHScan.StopCategoryScan()
+    eq(states[#states], "stopped")
+    eq(ns.AHScan.catScanning, false)
+    C_Timer.After = after
+    AuctionCategories = nil
+end)
+
+
 print(("%d passed, %d failed"):format(passed, failed))
 os.exit(failed == 0 and 0 or 1)

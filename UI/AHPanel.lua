@@ -436,9 +436,12 @@ local function Create()
     end)
     close:SetPoint("RIGHT", -8, 0)
     p.scanBtn = W.Button(header, "Scan", 84, function()
+        if S.catScanning then S.StopCategoryScan() return end -- click again to stop a category scan
         if S.scanning then return end -- the button shows the progress; nothing to do
-        local ok, msg = S.FullScan()
-        if not ok then UI.ScanNotReady(msg) end
+        local mode = ns.db.settings.scanMode or "full"
+        local ok, msg
+        if mode == "full" then ok, msg = S.FullScan() else ok, msg = S.CategoryScan(mode) end
+        if not ok then UI.ScanNotReady(msg, mode == "full") end
     end, true)
     p.modeBtn = W.Button(header, "Expand", 64, function()
         ns.db.settings.ahReplace = not ns.db.settings.ahReplace
@@ -456,7 +459,28 @@ local function Create()
         GameTooltip:Show()
     end)
     p.modeBtn:HookScript("OnLeave", function() GameTooltip:Hide() end)
-    p.scanBtn:SetPoint("RIGHT", p.modeBtn, "LEFT", -6, 0)
+    p.scanMode = W.Dropdown(header, 22, function(key)
+        ns.db.settings.scanMode = key
+    end)
+    p.scanMode.label:Hide()
+    p.scanMode.arrow:ClearAllPoints()
+    p.scanMode.arrow:SetPoint("CENTER", 0, -2)
+    p.scanMode:SetOptions({
+        { key = "full", label = "Full scan: everything (every 15 min)" },
+        { key = "crafting", label = "Category scan: crafting markets" },
+        { key = "all", label = "Category scan: every category" },
+    })
+    p.scanMode:SetValue(ns.db.settings.scanMode or "full")
+    p.scanMode:SetPoint("RIGHT", p.modeBtn, "LEFT", -6, 0)
+    p.scanMode:HookScript("OnEnter", function(b)
+        GameTooltip:SetOwner(b, "ANCHOR_BOTTOM")
+        GameTooltip:AddLine("Scan type")
+        GameTooltip:AddLine("Full scan: one snapshot of the whole auction house, once every 15 minutes.", 1, 1, 1, true)
+        GameTooltip:AddLine("Category scan: searches category by category. No cooldown, prices are saved as it goes, and you can stop it. Crafting markets = trade goods, consumables, recipes, gems, reagents and item enhancements.", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    p.scanMode:HookScript("OnLeave", function() GameTooltip:Hide() end)
+    p.scanBtn:SetPoint("RIGHT", p.scanMode, "LEFT", -2, 0)
     -- Scan progress lives on the button (percentage) and a thin bar under it, not in the shared status line.
     p.scanBar = CreateFrame("Frame", nil, header)
     p.scanBar:SetPoint("TOPLEFT", p.scanBtn, "BOTTOMLEFT", 0, -2)
@@ -472,16 +496,23 @@ local function Create()
     p.scanBar:Hide()
     p.scanBtn:HookScript("OnEnter", function(b)
         GameTooltip:SetOwner(b, "ANCHOR_BOTTOM")
-        GameTooltip:AddLine("Full price scan")
-        GameTooltip:AddLine("Reads every auction and records the lowest price per item. The server allows one every 15 minutes.", 1, 1, 1, true)
+        local mode = ns.db.settings.scanMode or "full"
+        if mode == "full" then
+            GameTooltip:AddLine("Full price scan")
+            GameTooltip:AddLine("Reads every auction and records the lowest price per item. The server allows one every 15 minutes.", 1, 1, 1, true)
+        else
+            GameTooltip:AddLine(mode == "all" and "Category scan: every category" or "Category scan: crafting markets")
+            GameTooltip:AddLine("Searches one category at a time and saves prices as it goes. No cooldown. Click again while it runs to stop (what it found is kept).", 1, 1, 1, true)
+        end
+        GameTooltip:AddLine("Change the scan type with the arrow next to this button.", 0.55, 0.58, 0.64, true)
         local info = p.scanInfo
         if info then GameTooltip:AddLine(info, 1, 0.82, 0, true) end
         local ready, left = S.FullScanReady()
-        if not ready and not S.scanning then GameTooltip:AddLine(("Available in %dm %ds"):format(math.floor(left / 60), left % 60), 1, 0.6, 0.2) end
+        if mode == "full" and not ready and not S.scanning then GameTooltip:AddLine(("Available in %dm %ds"):format(math.floor(left / 60), left % 60), 1, 0.6, 0.2) end
         local last = ns.db.lastScanResult
-        if last and not S.scanning then
-            GameTooltip:AddLine(("Last scan %s: %s items from %s auctions"):format(U.Ago(last.t), U.CommaNumber(last.items),
-                U.CommaNumber(last.auctions)), 0.55, 0.58, 0.64, true)
+        if last and not S.scanning and not S.catScanning then
+            GameTooltip:AddLine(("Last %s %s: %s items from %s auctions"):format(last.kind == "categories" and "category scan" or "scan",
+                U.Ago(last.t), U.CommaNumber(last.items), U.CommaNumber(last.auctions)), 0.55, 0.58, 0.64, true)
         end
         GameTooltip:Show()
     end)
@@ -861,10 +892,10 @@ local function ScanButton(text, pct)
 end
 
 --- The scan couldn't start (cooldown, client): say so on the button for a few seconds.
-function UI.ScanNotReady(msg)
+function UI.ScanNotReady(msg, full)
     if not panel then return end
     if scanResetTimer then scanResetTimer:Cancel() end
-    local left = select(2, S.FullScanReady())
+    local left = full and select(2, S.FullScanReady()) or 0 -- the 15-minute cooldown is for full scans only
     ScanButton(left > 0 and ("|cffff9933%dm left|r"):format(math.ceil(left / 60)) or "|cffff9933Not now|r", nil)
     panel.scanInfo = "|cffff9933" .. tostring(msg) .. "|r"
     scanResetTimer = C_Timer.NewTimer(4, function()
@@ -874,13 +905,18 @@ function UI.ScanNotReady(msg)
     end)
 end
 
-ns:Register("SCAN_PROGRESS", function(state, done, total)
+ns:Register("SCAN_PROGRESS", function(state, done, total, label, items)
     if not panel then return end
     if scanResetTimer then scanResetTimer:Cancel() scanResetTimer = nil end
     if state == "waiting" then
         local waited = done or 0
         panel.scanInfo = ("Waiting for the server to send the auctions (%ds). A big auction house can take a minute or two."):format(waited)
         ScanButton(waited >= 5 and ("Waiting %ds"):format(waited) or "Waiting...", 0)
+    elseif state == "categories" then
+        local pct = total > 0 and math.floor((done - 1) * 100 / total) or 0
+        panel.scanInfo = ("Scanning %s (%d of %d): %s items priced so far."):format(label or "?", done, total,
+            U.CommaNumber(items or 0))
+        ScanButton(("Scan %d%%"):format(pct), pct)
     elseif state == "reading" or state == "saving" then
         local pct = ScanPercent(state, done, total)
         panel.scanInfo = state == "reading"
@@ -889,10 +925,12 @@ ns:Register("SCAN_PROGRESS", function(state, done, total)
         ScanButton(("Scan %d%%"):format(pct), pct)
     else
         if state == "done" then
-            ns.db.lastScanResult = { t = time(), items = done, auctions = total }
             panel.scanInfo = nil
             ScanButton("|cff60ff60Done|r", 100)
-            if ns.db.settings.debug then ns:Print("full scan complete") end
+            if ns.db.settings.debug then ns:Print("scan complete") end
+        elseif state == "stopped" then
+            panel.scanInfo = ("Stopped: %s items priced before stopping."):format(U.CommaNumber(done or 0))
+            ScanButton("Stopped", nil)
         else
             panel.scanInfo = "|cffff6060Last scan failed: " .. (type(done) == "string" and done or "no response from the server") .. "|r"
             ScanButton("|cffff6060Failed|r", nil)

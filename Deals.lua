@@ -124,7 +124,9 @@ end
 
 function D.Next()
     if not D.running then return end
-    if (D.paused and D.paused()) or GetTime() - lastSend < MIN_INTERVAL or not Ready() then
+    -- A category scan uses the same search budget: wait for it to finish.
+    local busy = (D.paused and D.paused()) or (ns.AHScan and ns.AHScan.catScanning)
+    if busy or GetTime() - lastSend < MIN_INTERVAL or not Ready() then
         C_Timer.After(0.3, D.Next)
         return
     end

@@ -21,6 +21,7 @@ local DEFAULT_SETTINGS = {
     dealsFavorites = true, -- deals: also watch favorites
     dealsShopping = true,  -- deals: also watch shopping-list reagents still needed
     merchantStackBuy = true, -- shift-click a vendor item: confirm buying a full stack
+    scanMode = "full",       -- Scan button: "full" (snapshot) or a category scan ("crafting", "all")
 }
 
 ---------------------------------------------------------------------------
