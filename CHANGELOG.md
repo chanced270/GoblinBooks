@@ -1,6 +1,6 @@
 # GoblinBooks changelog
 
-## 0.1.4
+## 0.1.5
 
 ### Added
 - Charts tab, **AH profit**: profit per day from your auction sales (after the cut), minus what the items cost you and the deposits you lost. Hover a day for the breakdown, how many items sold, and any sold with no known cost (counted as free). Your past days are rebuilt from the ledger the first time you log in, with each item's cost spread over its sales, so the totals match the Auction P/L tab.
@@ -12,6 +12,18 @@
 ### Changed
 - Buy tab: searching an item gets priority over background searches. It waits until the server is ready, the Deals watcher and category scan pause until it's answered, and it's sent again (up to 3 times) if no listings come back. The server drops a search sent while its request limit is used up, without saying so. If there's still no answer, the page says so and you can click the item to retry.
 - The Buy and Flips pages share one category list, and the Deals and Flips pages share one item icon helper.
+
+## 0.1.4
+
+### Added
+- AH Sell tab: a note beside the price says which prices the listing takes: commodities (stackable goods like ore, cloth and herbs) can use copper, single items (gear, recipes and anything else that doesn't stack) whole silver only.
+- `/gb postlog`: your recent auction posts and what the server did with each (listed, error, or no answer, which is how a refused copper price shows up), with a summary by listing type and copper vs whole-silver price. If a post silently fails, this is what to send us.
+
+### Fixed
+- Pressing Shift while hovering a player or NPC could show a Lua error from Blizzard's tooltip code (`UnitPlayerControlled` ... "Secret values are only allowed during untainted execution"). GoblinBooks redraws the tooltip on Shift to update its item lines, and now does that only for item tooltips.
+- AH Sell tab: gear, recipes and other single items couldn't be undercut. The suggested price was 1 copper under the lowest listing, but the auction house only takes whole-silver prices for items that don't stack: a copper amount is refused (AH error DatabaseError; see [C_AuctionHouse.PostItem](https://warcraft.wiki.gg/wiki/API_C_AuctionHouse.PostItem) on warcraft.wiki.gg). They now get the next whole silver below it (12s 50c becomes 12s), and posting one at a copper price rounds it down to whole silver and asks you to click Post again. Stackable goods (commodities) still undercut by 1 copper.
+- AH Sell tab: some bag items could be missing from the list until a /reload. Items the game hadn't loaded yet (common right after logging in or zoning) were left out because the auction house couldn't check them, and nothing looked again. GoblinBooks now asks the game to load them and refreshes the list when they arrive (and a few seconds later, just in case).
+- AH Sell tab: soulbound and account-bound items are left out of your bag list more reliably. Besides the bag's own flag, GoblinBooks now also asks the item itself and reads its tooltip ("Soulbound"), in case the client gets the flag wrong.
 
 ## 0.1.3
 
