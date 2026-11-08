@@ -33,6 +33,14 @@ local function IsCommodity(loc, itemID)
     return (maxStack or 1) > 1
 end
 
+--- Which price rule a bag row's listing follows: "commodity" (copper prices work on WoW Forever),
+--- "gear" (whole silver only) or "item" (other non-commodities: whether copper works isn't known yet).
+local function PriceRule(row)
+    if row.commodity then return "commodity" end
+    if U.IsGear(row.itemID) then return "gear" end
+    return "item"
+end
+
 --- Link text without the hyperlink wrapper or brackets, keeping the quality color.
 local function DisplayName(row)
     local text = row.link and row.link:gsub("|H.-|h(.-)|h", "%1"):gsub("%[(.-)%]", "%1") or GetInfo(row.itemID) or ("item:" .. row.itemID)
@@ -184,6 +192,12 @@ local function CreateSellForm(p)
     plabel:SetPoint("TOPLEFT", 12, -168)
     f.price = W.MoneyInput(f, function() f:Update() end)
     f.price:SetPoint("TOPLEFT", 12, -182)
+    -- Which prices this listing takes (commodities: copper OK on WoW Forever; gear: whole silver only).
+    f.priceRule = W.Text(f, "mutedSm")
+    f.priceRule:SetPoint("LEFT", f.price, "RIGHT", 10, 0)
+    f.priceRule:SetPoint("RIGHT", -12, 0)
+    f.priceRule:SetJustifyH("LEFT")
+    f.priceRule:SetWordWrap(false)
 
     local qlabel = W.Text(f, "label", "QUANTITY")
     qlabel:SetPoint("TOPLEFT", 12, -214)
@@ -279,11 +293,16 @@ local function CreateSellForm(p)
             self.summary:SetText("")
             self.vendor:SetText("")
             self.noListings:SetText("")
+            self.priceRule:SetText("")
             p.postBtn:Disable()
             return
         end
         self.name:SetText(DisplayName(row))
         self.owned:SetText(("%d in bags"):format(row.count))
+        local rule = PriceRule(row)
+        self.priceRule:SetText(rule == "commodity" and "Commodity: copper prices OK"
+            or rule == "gear" and "|cffffc640Gear: whole silver only|r"
+            or "|cffff9933Item: copper prices untested (/gb postlog)|r")
 
         local e = P.Get(row.itemID)
         local parts = {}
@@ -387,6 +406,78 @@ end
 ---------------------------------------------------------------------------
 local function SetStatus(text) if panel then panel.status:SetText(text or "") end end
 
+---------------------------------------------------------------------------
+-- Post log (saved, newest last): every post attempt and what the server did with it, to find out which
+-- listings accept copper prices. "/gb postlog" prints it.
+--   db.postLog = { { t, n, i, rule, cls, sub, p (price each), q, confirm?, r (result), d? (detail) } }
+--   results: "sent" (waiting), "listed", "error", "warning", "no answer", "lua error"
+---------------------------------------------------------------------------
+local POST_LOG_MAX = 50
+local POST_ANSWER_WAIT = 10 -- seconds without any answer: the server dropped it (how a copper price fails)
+local openPost
+
+local function LogPost(row, price, qty, confirm)
+    if not ns.db then return end
+    local cls, sub
+    if C_Item and C_Item.GetItemInfoInstant then
+        local ok, _, _, _, _, _, c, s = pcall(C_Item.GetItemInfoInstant, row.itemID)
+        if ok then cls, sub = c, s end
+    end
+    local e = { t = time(), n = GetInfo(row.itemID) or ("item:" .. row.itemID), i = row.itemID, rule = PriceRule(row),
+                cls = cls, sub = sub, p = price, q = qty, confirm = confirm or nil, r = "sent" }
+    local log = ns.db.postLog or {}
+    ns.db.postLog = log
+    log[#log + 1] = e
+    while #log > POST_LOG_MAX do table.remove(log, 1) end
+    return e
+end
+
+local function ResolvePost(result, detail)
+    local e = openPost
+    if not e then return end
+    openPost = nil
+    e.r = result
+    if detail ~= nil and detail ~= "" then e.d = tostring(detail) end
+end
+
+local function AwaitAnswer(e)
+    openPost = e
+    C_Timer.After(POST_ANSWER_WAIT, function()
+        if openPost == e then ResolvePost("no answer") end
+    end)
+end
+
+--- Print the post log: a summary per price rule (copper vs whole-silver prices), then the latest posts.
+function UI.PrintPostLog()
+    local log = ns.db.postLog or {}
+    if #log == 0 then ns:Print("no posts logged yet") return end
+    local sum, order = {}, {}
+    for _, e in ipairs(log) do
+        local key = ("%s, %s price"):format(e.rule or "?", (e.p or 0) % 100 == 0 and "whole-silver" or "copper")
+        local s = sum[key]
+        if not s then
+            s = {}
+            sum[key] = s
+            order[#order + 1] = key
+        end
+        s[e.r] = (s[e.r] or 0) + 1
+    end
+    table.sort(order)
+    ns:Print("posts by listing type and price:")
+    for _, key in ipairs(order) do
+        local parts = {}
+        for r, n in pairs(sum[key]) do parts[#parts + 1] = ("%s %d"):format(r, n) end
+        table.sort(parts)
+        ns:Print(("  %s: %s"):format(key, table.concat(parts, ", ")))
+    end
+    for i = math.max(1, #log - 14), #log do
+        local e = log[i]
+        ns:Print(("%s  %s  %s x%d at %s  |cff8c94a3%s, class %s/%s%s%s|r"):format(date("%H:%M:%S", e.t), e.r, e.n, e.q or 0,
+            U.FormatMoney(e.p or 0), e.rule or "?", tostring(e.cls), tostring(e.sub), e.confirm and ", confirmed" or "",
+            e.d and (", " .. e.d) or ""))
+    end
+end
+
 local function Post()
     local f = panel.form
     local row = f.row
@@ -415,6 +506,7 @@ local function Post()
     -- watcher, category scan) for a moment so the next post isn't stuck behind them.
     S.postHoldUntil = GetTime() + S.POST_HOLD
     local ok, err
+    local confirming = panel.pendingConfirm ~= nil
     if panel.pendingConfirm then
         local c = panel.pendingConfirm
         panel.pendingConfirm = nil
@@ -434,10 +526,17 @@ local function Post()
         end
     end
     panel.postBtn:SetText("Post auction")
+    ResolvePost("no answer") -- an earlier post nobody answered
+    local entry = LogPost(row, price, qty, confirming)
     if ok then
         SetStatus(("Posting %d x %s..."):format(qty, DisplayName(row)))
+        if entry then
+            if err == true then entry.d = "needs confirmation" end
+            AwaitAnswer(entry)
+        end
     else
         SetStatus("|cffff6060Post failed: " .. tostring(err) .. "|r")
+        if entry then entry.r, entry.d = "lua error", tostring(err) end
     end
 end
 
@@ -936,6 +1035,7 @@ end)
 
 local postRefresh = 0
 ns:On("AUCTION_HOUSE_AUCTION_CREATED", function()
+    ResolvePost("listed")
     if not panel then return end
     SetStatus("|cff60ff60Auction posted.|r")
     panel.form.priceSet = true -- keep the user's price while listings refresh
@@ -952,6 +1052,7 @@ end)
 
 -- The server asks for confirmation when a price is far below market.
 ns:On("AUCTION_HOUSE_POST_WARNING", function()
+    ResolvePost("warning", "price well below market")
     if not panel or not panel.lastPost then return end
     panel.pendingConfirm = panel.lastPost
     panel.postBtn:SetText("Confirm post (price is well below market)")
@@ -959,7 +1060,16 @@ ns:On("AUCTION_HOUSE_POST_WARNING", function()
 end)
 
 ns:On("AUCTION_HOUSE_POST_ERROR", function()
+    ResolvePost("error", "AUCTION_HOUSE_POST_ERROR")
     SetStatus("|cffff6060The auction could not be posted.|r")
+end)
+
+-- The server's own error text for a post (red message at the top of the screen), and AH errors.
+ns:On("AUCTION_HOUSE_SHOW_ERROR", function(_, err)
+    if openPost then ResolvePost("error", "AH error " .. tostring(err)) end
+end)
+ns:On("UI_ERROR_MESSAGE", function(_, _, message)
+    if openPost then ResolvePost("error", message) end
 end)
 
 -- One overall percentage: reading the auctions is most of the work (0-80%), saving prices the rest.

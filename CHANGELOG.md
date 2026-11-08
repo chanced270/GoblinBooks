@@ -2,6 +2,10 @@
 
 ## 0.1.4
 
+### Added
+- AH Sell tab: a note beside the price says which prices the listing takes: commodities (stackable goods) can use copper, gear takes whole silver only, and for other items it isn't known yet.
+- `/gb postlog`: your recent auction posts and what the server did with each (listed, error, or no answer, which is how a refused copper price shows up), with a summary by listing type and copper vs whole-silver price. If a post silently fails, this is what to send us.
+
 ### Fixed
 - Pressing Shift while hovering a player or NPC could show a Lua error from Blizzard's tooltip code (`UnitPlayerControlled` ... "Secret values are only allowed during untainted execution"). GoblinBooks redraws the tooltip on Shift to update its item lines, and now does that only for item tooltips.
 - AH Sell tab: gear (armor and weapons) couldn't be undercut. The suggested price was 1 copper under the lowest listing, but the auction house only takes whole-silver prices for gear: a copper amount fails without an error (see [C_AuctionHouse.PostItem](https://warcraft.wiki.gg/wiki/API_C_AuctionHouse.PostItem) on warcraft.wiki.gg). Gear now gets the next whole silver below it (12s 50c becomes 12s), and posting gear at a copper price rounds it down to whole silver and asks you to click Post again. Everything else still undercuts by 1 copper.
