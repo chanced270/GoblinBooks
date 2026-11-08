@@ -171,7 +171,7 @@ local function CreateSellForm(p)
         b:SetScript("OnClick", function(s)
             if s.listing then
                 local undercut = s.listing.mine and 0 or ns.db.settings.undercut
-                f.price:SetValue(math.max(1, s.listing.unit - undercut))
+                f.price:SetValue(U.UndercutPrice(s.listing.unit, undercut, f.row and f.row.commodity == false))
                 f:Update()
             end
         end)
@@ -260,7 +260,7 @@ local function CreateSellForm(p)
             local first = listings[1]
             if first then
                 local undercut = first.mine and 0 or ns.db.settings.undercut
-                self.price:SetValue(math.max(1, first.unit - undercut))
+                self.price:SetValue(U.UndercutPrice(first.unit, undercut, self.row and self.row.commodity == false))
             end
             self.priceSet = true
         end
@@ -393,6 +393,15 @@ local function Post()
     if not row then return end
     local price, qty, dur = f:Values()
     if price <= 0 or qty <= 0 then return end
+    -- Gear and other non-stacking items list in whole silver only: round down and let you check it first.
+    if row.commodity == false and price % 100 ~= 0 then
+        local rounded = math.max(100, price - price % 100)
+        f.price:SetValue(rounded)
+        f:Update()
+        SetStatus(("|cffffc640Items like this can only be listed in whole silver: the price is now %s. Click Post again to list.|r"):format(
+            U.FormatMoney(rounded)))
+        return
+    end
     local warn = f.depositWarn
     if warn and not panel.pendingConfirm and panel.depositOK ~= warn.key then
         panel.depositOK = warn.key

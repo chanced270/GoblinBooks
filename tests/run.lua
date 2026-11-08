@@ -837,5 +837,19 @@ test("posting holds background searches for a moment", function()
 end)
 
 
+test("undercut price: copper for commodities, whole silver below the competitor for gear", function()
+    local ns = S.LoadAddon(ROOT)
+    local U = ns.Util
+    eq(U.UndercutPrice(1250, 1, false), 1249, "commodity: 1 copper under")
+    eq(U.UndercutPrice(1250, 1, true), 1200, "gear: whole silver under")
+    eq(U.UndercutPrice(1200, 1, true), 1100, "gear at a whole-silver price: 1 silver under")
+    eq(U.UndercutPrice(1200, 0, true), 1200, "your own listing: matched")
+    eq(U.UndercutPrice(1250, 0, true), 1200, "matching a copper price still rounds down")
+    eq(U.UndercutPrice(150, 1, true), 100, "never below 1 silver")
+    eq(U.UndercutPrice(80, 1, true), 100)
+    eq(U.UndercutPrice(1, 5, false), 1, "never below 1 copper")
+    eq(U.UndercutPrice(50000, 500, true), 49500, "a larger undercut setting is kept")
+end)
+
 print(("%d passed, %d failed"):format(passed, failed))
 os.exit(failed == 0 and 0 or 1)
