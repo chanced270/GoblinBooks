@@ -148,9 +148,10 @@ function U.ItemIDFromName(nameOrLink)
     return nil
 end
 
---- Price to list at, `undercut` copper below a competitor's unit price (0 = match it). Gear (wholeSilver)
---- can only be listed in whole silver: its price is rounded down to whole silver, staying below the
---- competitor, and is at least 1 silver. Everything else keeps the copper undercut.
+--- Price to list at, `undercut` copper below a competitor's unit price (0 = match it). Single items
+--- (wholeSilver: gear, recipes, anything that isn't a commodity) can only be listed in whole silver: their
+--- price is rounded down to whole silver, staying below the competitor, and is at least 1 silver.
+--- Commodities keep the copper undercut.
 function U.UndercutPrice(unit, undercut, wholeSilver)
     local price = math.max(1, unit - (undercut or 0))
     if wholeSilver then

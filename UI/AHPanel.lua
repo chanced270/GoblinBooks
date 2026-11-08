@@ -33,12 +33,18 @@ local function IsCommodity(loc, itemID)
     return (maxStack or 1) > 1
 end
 
---- Which price rule a bag row's listing follows: "commodity" (copper prices work on WoW Forever),
---- "gear" (whole silver only) or "item" (other non-commodities: whether copper works isn't known yet).
+--- What kind of listing a bag row makes, for the price note and the post log: "commodity" (stackable
+--- goods; copper prices work on WoW Forever), or a single item, "gear" or "item". Single items only take
+--- whole-silver prices: a copper amount is refused with AH error DatabaseError (seen on gear and recipes).
 local function PriceRule(row)
     if row.commodity then return "commodity" end
     if U.IsGear(row.itemID) then return "gear" end
     return "item"
+end
+
+--- Single items (not commodities) are listed in whole silver only.
+local function WholeSilver(row)
+    return row ~= nil and not row.commodity
 end
 
 --- Link text without the hyperlink wrapper or brackets, keeping the quality color.
@@ -202,7 +208,7 @@ local function CreateSellForm(p)
         b:SetScript("OnClick", function(s)
             if s.listing then
                 local undercut = s.listing.mine and 0 or ns.db.settings.undercut
-                f.price:SetValue(U.UndercutPrice(s.listing.unit, undercut, f.row and U.IsGear(f.row.itemID)))
+                f.price:SetValue(U.UndercutPrice(s.listing.unit, undercut, WholeSilver(f.row)))
                 f:Update()
             end
         end)
@@ -215,7 +221,7 @@ local function CreateSellForm(p)
     plabel:SetPoint("TOPLEFT", 12, -168)
     f.price = W.MoneyInput(f, function() f:Update() end)
     f.price:SetPoint("TOPLEFT", 12, -182)
-    -- Which prices this listing takes (commodities: copper OK on WoW Forever; gear: whole silver only).
+    -- Which prices this listing takes (commodities: copper OK on WoW Forever; single items: whole silver only).
     f.priceRule = W.Text(f, "mutedSm")
     f.priceRule:SetPoint("LEFT", f.price, "RIGHT", 10, 0)
     f.priceRule:SetPoint("RIGHT", -12, 0)
@@ -297,7 +303,7 @@ local function CreateSellForm(p)
             local first = listings[1]
             if first then
                 local undercut = first.mine and 0 or ns.db.settings.undercut
-                self.price:SetValue(U.UndercutPrice(first.unit, undercut, self.row and U.IsGear(self.row.itemID)))
+                self.price:SetValue(U.UndercutPrice(first.unit, undercut, WholeSilver(self.row)))
             end
             self.priceSet = true
         end
@@ -324,8 +330,7 @@ local function CreateSellForm(p)
         self.owned:SetText(("%d in bags"):format(row.count))
         local rule = PriceRule(row)
         self.priceRule:SetText(rule == "commodity" and "Commodity: copper prices OK"
-            or rule == "gear" and "|cffffc640Gear: whole silver only|r"
-            or "|cffff9933Item: copper prices untested (/gb postlog)|r")
+            or "|cffffc640Single item: whole silver only|r")
 
         local e = P.Get(row.itemID)
         local parts = {}
@@ -507,12 +512,12 @@ local function Post()
     if not row then return end
     local price, qty, dur = f:Values()
     if price <= 0 or qty <= 0 then return end
-    -- Gear lists in whole silver only: round down and let you check it first.
-    if U.IsGear(row.itemID) and price % 100 ~= 0 then
+    -- Single items list in whole silver only: round down and let you check it first.
+    if WholeSilver(row) and price % 100 ~= 0 then
         local rounded = math.max(100, price - price % 100)
         f.price:SetValue(rounded)
         f:Update()
-        SetStatus(("|cffffc640Gear can only be listed in whole silver: the price is now %s. Click Post again to list.|r"):format(
+        SetStatus(("|cffffc640Single items can only be listed in whole silver: the price is now %s. Click Post again to list.|r"):format(
             U.FormatMoney(rounded)))
         return
     end
