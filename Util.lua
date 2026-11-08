@@ -148,6 +148,18 @@ function U.ItemIDFromName(nameOrLink)
     return nil
 end
 
+--- Price to list at, `undercut` copper below a competitor's unit price (0 = match it). Gear and other
+--- non-stacking items can only be listed in whole silver: their price is rounded down to whole silver,
+--- staying below the competitor, and is at least 1 silver.
+function U.UndercutPrice(unit, undercut, wholeSilver)
+    local price = math.max(1, unit - (undercut or 0))
+    if wholeSilver then
+        price = math.floor(price / 100) * 100
+        if price < 100 then price = 100 end
+    end
+    return price
+end
+
 function U.ItemName(itemID)
     if not itemID then return nil end
     local fn = (C_Item and C_Item.GetItemNameByID) or GetItemInfo
