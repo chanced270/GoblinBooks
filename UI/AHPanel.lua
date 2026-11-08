@@ -1064,9 +1064,20 @@ ns:On("AUCTION_HOUSE_POST_ERROR", function()
     SetStatus("|cffff6060The auction could not be posted.|r")
 end)
 
+--- An AH error number by its name from the client (e.g. 10 -> "DatabaseError"), or the number.
+local function AHErrorName(err)
+    local enum = Enum and Enum.AuctionHouseError
+    if type(enum) == "table" then
+        for name, v in pairs(enum) do
+            if v == err then return ("%s (%s)"):format(name, tostring(err)) end
+        end
+    end
+    return tostring(err)
+end
+
 -- The server's own error text for a post (red message at the top of the screen), and AH errors.
 ns:On("AUCTION_HOUSE_SHOW_ERROR", function(_, err)
-    if openPost then ResolvePost("error", "AH error " .. tostring(err)) end
+    if openPost then ResolvePost("error", "AH error " .. AHErrorName(err)) end
 end)
 ns:On("UI_ERROR_MESSAGE", function(_, _, message)
     if openPost then ResolvePost("error", message) end
