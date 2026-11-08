@@ -130,7 +130,7 @@ function S.LoadAddon(root, startMoney)
     local files = {
         "Core.lua", "Util.lua", "Categories.lua", "Ledger.lua", "CostBasis.lua", "Prices.lua", "Crafting.lua", "Money.lua",
         "Sources/Loot.lua", "Sources/Quest.lua", "Sources/Merchant.lua", "Sources/Mail.lua",
-        "Sources/Trade.lua", "Sources/Misc.lua", "AuctionHouse.lua", "Inventory.lua", "Deals.lua",
+        "Sources/Trade.lua", "Sources/Misc.lua", "AuctionHouse.lua", "Inventory.lua", "Watchlist.lua",
     }
     -- Re-create hookable functions each load so hooks don't stack across tests.
     for _, name in ipairs({ "GetQuestReward", "RepairAllItems", "BuyMerchantItem", "BuybackItem", "TakeInboxMoney",

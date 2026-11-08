@@ -17,10 +17,7 @@ local DEFAULT_SETTINGS = {
     ahReplace = true,      -- full-window mode: cover (and hide) the Blizzard auction house window
     undercut = 1,          -- copper below the lowest competitor when suggesting a price
     postDuration = 2,      -- 1 = 12h, 2 = 24h, 3 = 48h
-    dealsPct = 0.7,        -- deals: default limit as a share of the usual price
-    dealsSound = true,     -- deals: sound + taskbar flash when a new deal appears
-    dealsFavorites = true, -- deals: also watch favorites
-    dealsShopping = true,  -- deals: also watch shopping-list reagents still needed
+    dealsPct = 0.7,        -- watch list: default price limit as a share of the usual price
     merchantStackBuy = true, -- shift-click a vendor item: confirm buying a full stack
     scanMode = "full",       -- Scan button: "full" (snapshot) or a category scan ("crafting", "all")
 }

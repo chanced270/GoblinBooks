@@ -511,26 +511,27 @@ test("crafting moves the reagents' cost into the crafted item", function()
     eq(c.lots[8888], nil)
 end)
 
-test("deals: listings under the limit, not your own", function()
+test("watch list: add, limit (max beats % of usual), remove", function()
     local ns = S.LoadAddon(ROOT)
-    local D = ns.Deals
-    local list = {
-        { unit = 50, qty = 5 }, { unit = 60, qty = 3, mine = true }, { unit = 70, qty = 10 }, { unit = 90, qty = 4 },
-    }
-    local d = D.Evaluate(2589, list, true, 75)
-    eq(d.unit, 50)
-    eq(d.qty, 15, "5 + 10 (own listing skipped, 90 over the limit)")
-    eq(d.cost, 5 * 50 + 10 * 70)
-    eq(D.Evaluate(2589, list, true, 40), nil, "nothing under 40")
-    -- Non-commodity: the auction price is for the whole stack.
-    local item = D.Evaluate(9, { { unit = 400, qty = 4, id = 77 } }, false, 120)
-    eq(item.unit, 100)
-    eq(item.auctionID, 77)
-    eq(item.auctionPrice, 400)
-    -- Max price beats the % rule.
-    D.AddWatch(2589)
-    D.Watch()[2589].max = 33
-    eq((D.Threshold(2589)), 33)
+    local WL, P = ns.Watchlist, ns.Prices
+    eq(WL.IsWatched(2589), false)
+    WL.AddWatch(2589, "Linen Cloth")
+    eq(WL.IsWatched(2589), true)
+    eq(WL.Threshold(2589), nil, "no price history yet")
+    -- Usual = median of the previous days' lows; the default limit is 70% of it.
+    for d = 1, 5 do P.Record(2589, 100, 10, "Linen Cloth", S.walltime - d * 86400) end
+    eq(WL.Usual(2589), 100)
+    local thr, how = WL.Threshold(2589)
+    eq(thr, 70); eq(how, "pct")
+    WL.Watch()[2589].pct = 0.5
+    eq((WL.Threshold(2589)), 50)
+    WL.Watch()[2589].max = 33
+    eq((WL.Threshold(2589)), 33, "a max price beats the % rule")
+    WL.AddWatch(10)
+    eq(#WL.Items(), 2)
+    WL.RemoveWatch(2589)
+    eq(WL.IsWatched(2589), false)
+    eq(#WL.Items(), 1)
 end)
 
 test("net worth: gold plus items at the better of AH and vendor", function()

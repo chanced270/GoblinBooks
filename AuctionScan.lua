@@ -155,8 +155,8 @@ end
 
 ---------------------------------------------------------------------------
 -- Your searches (clicking an item on the Buy tab). The server drops a query sent while its request budget
--- is spent, without an answer, so a search is sent only when it's ready, background searches (Deals
--- watcher, category scan) wait while yours is open, and it's sent again if no results come back.
+-- is spent, without an answer, so a search is sent only when it's ready, background searches (the
+-- category scan) wait while yours is open, and it's sent again if no results come back.
 -- Fires "AH_SEARCH_FAILED"(itemID) after the last try.
 --   S.fg = { key, id, tries, sentAt?, since } while one is open (only the latest; a new one replaces it)
 ---------------------------------------------------------------------------
@@ -287,7 +287,7 @@ S.WAIT_LIMIT = 180  -- seconds before a scan with no answer shows as failed
 S.POST_HOLD = 2     -- seconds after a post that background searches wait (posts get the request budget)
 S.postHoldUntil = 0
 
---- True while you're posting: background searches (Deals watcher, category scan) should wait.
+--- True while you're posting: background searches (category scan) should wait.
 function S.PostingHold()
     return GetTime() < (S.postHoldUntil or 0)
 end
@@ -387,7 +387,7 @@ end)
 ---------------------------------------------------------------------------
 -- Category scan: the same searches as the Buy page, one category at a time (every page of each), instead
 -- of the full snapshot. No 15-minute cooldown, prices are saved as each page arrives, and stopping keeps
--- what was found. Paced by the server's search throttle; the Deals watcher waits while it runs.
+-- what was found. Paced by the server's search throttle; your own searches go first.
 -- mode: "all" (every category) or "crafting" (trade goods, consumables, recipes, gems, reagents,
 -- item enhancements).
 ---------------------------------------------------------------------------

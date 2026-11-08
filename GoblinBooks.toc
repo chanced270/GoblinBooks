@@ -29,7 +29,7 @@ Sources\Trade.lua
 Sources\Misc.lua
 AuctionHouse.lua
 AuctionScan.lua
-Deals.lua
+Watchlist.lua
 
 Libs\GoblinTheme.lua
 UI\Widgets.lua
@@ -44,7 +44,7 @@ UI\CraftingView.lua
 UI\AHAuctions.lua
 UI\AHBuy.lua
 UI\AHFlips.lua
-UI\AHDeals.lua
+UI\AHWatchlist.lua
 UI\AHPanel.lua
 UI\Tooltip.lua
 UI\MerchantBuy.lua

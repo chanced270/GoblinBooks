@@ -165,14 +165,14 @@ function UI.CreateAHBuy(parent, setStatus)
     d.watchBtn = W.Button(d, "Watch", 56, function()
         local sel = f.sel
         if not sel then return end
-        if ns.Deals.IsWatched(sel.itemID) then
-            ns.Deals.RemoveWatch(sel.itemID)
+        if ns.Watchlist.IsWatched(sel.itemID) then
+            ns.Watchlist.RemoveWatch(sel.itemID)
             setStatus("No longer watching " .. (U.ItemName(sel.itemID) or "it") .. ".")
         else
-            ns.Deals.AddWatch(sel.itemID)
-            local thr = ns.Deals.Threshold(sel.itemID)
-            setStatus(("Watching %s for deals%s. Set a max price on the Watchlist tab."):format(U.ItemName(sel.itemID) or "it",
-                thr and (" under " .. U.FormatMoney(thr)) or ""))
+            ns.Watchlist.AddWatch(sel.itemID)
+            local thr = ns.Watchlist.Threshold(sel.itemID)
+            setStatus(("Watching %s%s. Change the limit on the Watchlist tab."):format(U.ItemName(sel.itemID) or "it",
+                thr and (" (limit " .. U.FormatMoney(thr) .. ")") or ""))
         end
         f:Update()
     end)
@@ -543,7 +543,7 @@ function UI.CreateAHBuy(parent, setStatus)
         self:UpdateBid()
         d.star:SetShown(sel ~= nil)
         d.watchBtn:SetShown(sel ~= nil)
-        if sel then d.watchBtn:SetText(ns.Deals.IsWatched(sel.itemID) and "Watching" or "Watch") end
+        if sel then d.watchBtn:SetText(ns.Watchlist.IsWatched(sel.itemID) and "Watching" or "Watch") end
         if sel then
             local fav = P.IsFavorite(sel.itemID)
             d.star.tex:SetDesaturated(not fav)

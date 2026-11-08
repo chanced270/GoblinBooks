@@ -530,8 +530,8 @@ local function Post()
         return
     end
     panel.depositOK = nil
-    -- Posting goes through the same server request limit as searches: hold background searches (Deals
-    -- watcher, category scan) for a moment so the next post isn't stuck behind them.
+    -- Posting goes through the same server request limit as searches: hold background searches (the
+    -- category scan) for a moment so the next post isn't stuck behind them.
     S.postHoldUntil = GetTime() + S.POST_HOLD
     local ok, err
     local confirming = panel.pendingConfirm ~= nil
@@ -730,13 +730,12 @@ local function Create()
 
     -- Page bar. Flips is only there when it's turned on in the settings: two bars, the matching one shown
     -- (read when the window opens; the settings panel has no change callbacks, see Options.lua).
-    -- The Watchlist page keeps the key "deals" (saved as the last page you had open).
     local function PageBar(withFlips)
         local opts = {
             { key = "buy", label = "Buy" },
             { key = "sell", label = "Sell" },
             { key = "auctions", label = "Auctions" },
-            { key = "deals", label = "Watchlist" },
+            { key = "watchlist", label = "Watchlist" },
         }
         if withFlips then opts[#opts + 1] = { key = "flips", label = "Flips" } end
         local seg = W.Segmented(header, opts, function(key) p:ShowPage(key) end, 52)
@@ -933,13 +932,15 @@ local function Create()
     p.flips:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 12, -30)
     p.flips:SetPoint("BOTTOMRIGHT", -12, 12)
 
-    p.deals = UI.CreateAHDeals(p, SetStatus)
-    p.deals:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 12, -30)
-    p.deals:SetPoint("BOTTOMRIGHT", -12, 12)
-    -- The deals scanner pauses while you're mid-purchase on the Buy tab.
-    UI.AHBuyBusy = function() return p.buy.stage ~= nil or p.buy.bidStage ~= nil end
+    p.watchlist = UI.CreateAHWatchlist(p, SetStatus, function(itemID)
+        p:ShowPage("buy")
+        p.buy:OpenItem(itemID)
+    end)
+    p.watchlist:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 12, -30)
+    p.watchlist:SetPoint("BOTTOMRIGHT", -12, 12)
 
     function p:ShowPage(key)
+        if key == "deals" then key = "watchlist" end -- the page before 0.1.5
         if key == "flips" and not ns.db.settings.ahFlips then key = "buy" end
         self.page = key
         ns.db.settings.ahPage = key
@@ -950,7 +951,7 @@ local function Create()
         self.auctions:SetShown(key == "auctions")
         self.buy:SetShown(key == "buy")
         self.flips:SetShown(key == "flips")
-        self.deals:SetShown(key == "deals")
+        self.watchlist:SetShown(key == "watchlist")
     end
     p:ShowPage(ns.db.settings.ahPage or "buy")
     p:SyncPageBar()
