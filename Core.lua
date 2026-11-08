@@ -257,6 +257,7 @@ local HELP = {
     "/gb deposit - is the WoW Forever 1s minimum-deposit bug still happening?",
     "/gb perf - time what GoblinBooks does (type it, do the slow thing, type it again)",
     "/gb scanlog - what happened during the last AH scans (requests, data, timeouts)",
+    "/gb postlog - your recent AH posts and what the server did with them (listed, error, no answer)",
     "/gb reset confirm - wipe this character's data",
 }
 
@@ -318,6 +319,8 @@ SlashCmdList.GOBLINBOOKS = function(msg)
             local e = log[i]
             ns:Print(("%s  %s%s"):format(date("%H:%M:%S", e.t), e.e, e.d and ("  |cff8c94a3" .. e.d .. "|r") or ""))
         end
+    elseif cmd == "postlog" then
+        if ns.UI.PrintPostLog then ns.UI.PrintPostLog() else ns:Print("open the auction house once first") end
     elseif cmd == "prune" then
         local n = ns.Ledger.Prune(ns.char, ns.db.settings.retentionDays, time())
         ns:Print(("pruned %d entries"):format(n))
