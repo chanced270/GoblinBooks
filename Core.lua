@@ -4,6 +4,7 @@ ns.ADDON = ADDON
 ns.VERSION = 5 -- saved-variable schema version
 
 local DEFAULT_SETTINGS = {
+    ahFlips = false,      -- show the Flips page in the auction house window
     retentionDays = 90,   -- raw ledger entries older than this are pruned (daily rollups are kept forever)
     debug = false,        -- print every gold change and its category to chat
     accountView = false,  -- UI shows all characters instead of the current one

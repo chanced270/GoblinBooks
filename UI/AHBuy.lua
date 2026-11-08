@@ -161,7 +161,7 @@ function UI.CreateAHBuy(parent, setStatus)
     d.star:SetScript("OnLeave", function() GameTooltip:Hide() end)
     d.star:Hide()
 
-    -- Watch for deals on this item (Deals tab).
+    -- Add this item to your watch list (Watchlist tab).
     d.watchBtn = W.Button(d, "Watch", 56, function()
         local sel = f.sel
         if not sel then return end
@@ -171,7 +171,7 @@ function UI.CreateAHBuy(parent, setStatus)
         else
             ns.Deals.AddWatch(sel.itemID)
             local thr = ns.Deals.Threshold(sel.itemID)
-            setStatus(("Watching %s for deals%s. Set a max price on the Deals tab."):format(U.ItemName(sel.itemID) or "it",
+            setStatus(("Watching %s for deals%s. Set a max price on the Watchlist tab."):format(U.ItemName(sel.itemID) or "it",
                 thr and (" under " .. U.FormatMoney(thr)) or ""))
         end
         f:Update()

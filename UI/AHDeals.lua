@@ -1,4 +1,6 @@
--- AH panel "Deals" page: the deals watcher (Deals.lua) results, the watch list, and one big Buy button.
+-- AH panel "Watchlist" page: your watched items (with your limit and the lowest price seen), and, when you
+-- turn on "Watch for deals", the deals the watcher (Deals.lua) finds plus one big Buy button. The watcher
+-- only runs while that's on: it searches your watch list over and over, using the server's search limit.
 -- Every purchase is your click: commodities quote first (click 1) then confirm (click 2); other items arm
 -- (click 1) then buy out (click 2). A quote above your limit is refused.
 local _, ns = ...
@@ -7,6 +9,7 @@ local T = W.Theme
 local AH = C_AuctionHouse
 
 local GREEN, GOLD = { 0.38, 1, 0.38 }, { 1, 0.78, 0.25 }
+local P = ns.Prices
 
 local function Name(id) return U.ItemName(id) or ("item:" .. id) end
 local Icon = U.ItemIcon
@@ -14,16 +17,21 @@ local Icon = U.ItemIcon
 function UI.CreateAHDeals(parent, setStatus)
     local D = ns.Deals
     local f = CreateFrame("Frame", nil, parent)
-    f.mode = "deals"
+    f.mode = "watch"
 
-    -- Top row: Deals | Watch list, Start/Stop, progress.
+    -- Top row: Watched items | Deals found, Watch for deals on/off, progress.
     f.modeSeg = W.Segmented(f, {
-        { key = "deals", label = "Deals" },
-        { key = "watch", label = "Watch list" },
+        { key = "watch", label = "Watched items" },
+        { key = "deals", label = "Deals found" },
     }, function(key) f:SetMode(key) end, 72)
     f.modeSeg:SetPoint("TOPLEFT")
-    f.runBtn = W.Button(f, "Start watching", 110, function()
-        if D.running then D.Stop() else D.Start() end
+    f.runBtn = W.Button(f, "Watch for deals", 116, function()
+        if D.running then
+            D.Stop()
+        else
+            D.Start()
+            if D.running then f:SetMode("deals") end
+        end
     end, true)
     f.runBtn:SetPoint("LEFT", f.modeSeg, "RIGHT", 8, 0)
     f.progress = W.Text(f, "mutedSm", "")
@@ -55,7 +63,7 @@ function UI.CreateAHDeals(parent, setStatus)
     deals:SetPoint("TOPLEFT", 0, -32)
     deals:SetPoint("BOTTOMRIGHT", 0, 44)
     deals.sortCol, deals.sortDesc = 4, true
-    deals.empty:SetText("No deals yet. Click Start watching (it checks your watch list over and over).")
+    deals.empty:SetText("No deals yet. Click Watch for deals: it checks your watched items over and over while it's on.")
     deals.onClick = function(d)
         f.selected = d.id
         f:ResetBuy()
@@ -93,6 +101,17 @@ function UI.CreateAHDeals(parent, setStatus)
             local u = D.Usual(r.id)
             return u and U.FormatGoldShort(u) or "-", T.muted[1], T.muted[2], T.muted[3]
         end },
+        -- Lowest price seen (last scan or search), green when it's at or under your limit.
+        { title = "Lowest", width = 62, align = "RIGHT", get = function(r)
+            local e = P.Get(r.id)
+            if not (e and e.p) then return "-", T.muted[1], T.muted[2], T.muted[3] end
+            local thr = D.Threshold(r.id)
+            if thr and e.p <= thr then return U.FormatGoldShort(e.p), GREEN[1], GREEN[2], GREEN[3] end
+            return U.FormatGoldShort(e.p)
+        end, sortValue = function(r)
+            local e = P.Get(r.id)
+            return e and e.p or math.huge
+        end },
         { title = "From", width = 70, get = function(r) return r.from, T.muted[1], T.muted[2], T.muted[3] end,
           sortValue = function(r) return r.from end },
     }, 20)
@@ -107,6 +126,19 @@ function UI.CreateAHDeals(parent, setStatus)
         f:UpdateWatchButtons()
     end
     watch.isSelected = function(r) return r.id == f.watchSel end
+    watch.onEnter = function(row, r)
+        GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
+        pcall(GameTooltip.SetItemByID, GameTooltip, r.id)
+        local e = P.Get(r.id)
+        local thr = D.Threshold(r.id)
+        GameTooltip:AddLine(" ")
+        if e and e.p then
+            GameTooltip:AddDoubleLine("Lowest seen", ("%s  |cff8c94a3%s|r"):format(U.FormatMoney(e.p), U.Ago(e.t)), 1, 0.82, 0, 1, 1, 1)
+        end
+        if thr then GameTooltip:AddDoubleLine("Your limit", U.FormatMoney(thr), 1, 0.82, 0, 1, 1, 1) end
+        GameTooltip:AddLine("Click to set a max price or % of usual below.", 0.55, 0.58, 0.64, true)
+        GameTooltip:Show()
+    end
     f.watch = watch
 
     -- Watch editing row: max price or %, Save, Remove.
@@ -305,7 +337,7 @@ function UI.CreateAHDeals(parent, setStatus)
     end
 
     function f:RefreshProgress()
-        self.runBtn:SetText(D.running and "Stop" or "Start watching")
+        self.runBtn:SetText(D.running and "Stop watching" or "Watch for deals")
         local p = D.progress
         if D.running then
             self.progress:SetText(("Checking %d / %d%s"):format(p.i, p.n,
@@ -314,7 +346,7 @@ function UI.CreateAHDeals(parent, setStatus)
             self.progress:SetText("|cffff9933" .. D.stopMsg .. "|r")
         else
             local n = #(D.Targets())
-            self.progress:SetText(("%d items to watch   |cff8c94a3one search every ~1s, buying is always your click|r"):format(n))
+            self.progress:SetText(("%d items   |cff8c94a3Watch for deals searches them every ~1s while on; buying is always your click|r"):format(n))
         end
     end
 
@@ -341,11 +373,13 @@ function UI.CreateAHDeals(parent, setStatus)
             self:UpdateWatchButtons()
         end
         self:RefreshProgress()
+        local found = #D.List()
+        self.modeSeg:SetLabel("deals", found > 0 and ("Deals found |cff60ff60%d|r"):format(found) or "Deals found")
     end
 
     ns:Register("DEALS_UPDATED", function() if f:IsVisible() then f:Refresh() end end)
     ns:Register("DEALS_PROGRESS", function() if f:IsVisible() then f:RefreshProgress() end end)
     f:SetScript("OnShow", function(self) self:Refresh() end)
-    f:SetMode("deals")
+    f:SetMode("watch")
     return f
 end

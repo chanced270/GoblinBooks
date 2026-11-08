@@ -728,14 +728,32 @@ local function Create()
     end)
     p.scanBtn:HookScript("OnLeave", function() GameTooltip:Hide() end)
 
-    p.pageSeg = W.Segmented(header, {
-        { key = "buy", label = "Buy" },
-        { key = "sell", label = "Sell" },
-        { key = "auctions", label = "Auctions" },
-        { key = "flips", label = "Flips" },
-        { key = "deals", label = "Deals" },
-    }, function(key) p:ShowPage(key) end, 52)
-    p.pageSeg:SetPoint("LEFT", title, "RIGHT", 10, 0)
+    -- Page bar. Flips is only there when it's turned on in the settings: two bars, the matching one shown
+    -- (read when the window opens; the settings panel has no change callbacks, see Options.lua).
+    -- The Watchlist page keeps the key "deals" (saved as the last page you had open).
+    local function PageBar(withFlips)
+        local opts = {
+            { key = "buy", label = "Buy" },
+            { key = "sell", label = "Sell" },
+            { key = "auctions", label = "Auctions" },
+            { key = "deals", label = "Watchlist" },
+        }
+        if withFlips then opts[#opts + 1] = { key = "flips", label = "Flips" } end
+        local seg = W.Segmented(header, opts, function(key) p:ShowPage(key) end, 52)
+        seg:SetPoint("LEFT", title, "RIGHT", 10, 0)
+        return seg
+    end
+    local bars = { PageBar(false), PageBar(true) }
+    p.pageSeg = {
+        SetValue = function(_, key) for _, b in ipairs(bars) do b:SetValue(key) end end,
+        SetLabel = function(_, key, text) for _, b in ipairs(bars) do b:SetLabel(key, text) end end,
+    }
+    function p:SyncPageBar()
+        local flips = ns.db.settings.ahFlips and true or false
+        bars[1]:SetShown(not flips)
+        bars[2]:SetShown(flips)
+        if not flips and self.page == "flips" then self:ShowPage("buy") end
+    end
 
     p.status = W.Text(p, "mutedSm", "Pick an item from your bags to see listings.")
     p.status:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 14, -10)
@@ -922,6 +940,7 @@ local function Create()
     UI.AHBuyBusy = function() return p.buy.stage ~= nil or p.buy.bidStage ~= nil end
 
     function p:ShowPage(key)
+        if key == "flips" and not ns.db.settings.ahFlips then key = "buy" end
         self.page = key
         ns.db.settings.ahPage = key
         self.pageSeg:SetValue(key)
@@ -934,6 +953,7 @@ local function Create()
         self.deals:SetShown(key == "deals")
     end
     p:ShowPage(ns.db.settings.ahPage or "buy")
+    p:SyncPageBar()
 
     p.header = header
     p:SetMovable(true)
@@ -956,6 +976,7 @@ local function Create()
     p.grip:Hide()
 
     p:SetScript("OnShow", function()
+        p:SyncPageBar()
         p.pendingConfirm = nil
         bagsDirty = true
         loadRetries = 0

@@ -10,6 +10,8 @@
 - Flips page: item icons, a name filter, and category and subcategory filters (the auction house's own categories). They only narrow the list, without sending any searches to the server, and the category you pick is remembered.
 
 ### Changed
+- Auction house window: the **Deals** page is now **Watchlist**. It opens on your watched items with your limit, the usual price and the lowest price seen (green when it's at or under your limit). Watching for deals is a button on that page and stays off until you click it, since it searches your list over and over; deals it finds are under "Deals found".
+- The **Flips** page is off by default. Turn it on in the settings ("Show the Flips page at the auction house"); it shows the next time the auction house window opens.
 - Buy tab: searching an item gets priority over background searches. It waits until the server is ready, the Deals watcher and category scan pause until it's answered, and it's sent again (up to 3 times) if no listings come back. The server drops a search sent while its request limit is used up, without saying so. If there's still no answer, the page says so and you can click the item to retry.
 - The Buy and Flips pages share one category list, and the Deals and Flips pages share one item icon helper.
 
