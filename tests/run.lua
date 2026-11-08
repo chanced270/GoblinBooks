@@ -996,6 +996,14 @@ test("undercut price: copper for commodities, whole silver below the competitor 
     eq(U.UndercutPrice(80, 1, true), 100)
     eq(U.UndercutPrice(1, 5, false), 1, "never below 1 copper")
     eq(U.UndercutPrice(50000, 500, true), 49500, "a larger undercut setting is kept")
+    -- Only armor and weapons count as gear.
+    local saved = C_Item.GetItemInfoInstant
+    local class = { [10] = 4, [11] = 2, [12] = 9, [13] = 7 } -- armor, weapon, recipe, trade goods
+    C_Item.GetItemInfoInstant = function(id) if class[id] then return id, "", "", "", 0, class[id], 0 end end
+    eq(U.IsGear(10), true); eq(U.IsGear(11), true)
+    eq(U.IsGear(12), false, "a recipe keeps the copper undercut"); eq(U.IsGear(13), false)
+    eq(U.IsGear(999), false, "unknown item")
+    C_Item.GetItemInfoInstant = saved
 end)
 
 print(("%d passed, %d failed"):format(passed, failed))

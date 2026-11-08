@@ -148,9 +148,9 @@ function U.ItemIDFromName(nameOrLink)
     return nil
 end
 
---- Price to list at, `undercut` copper below a competitor's unit price (0 = match it). Gear and other
---- non-stacking items can only be listed in whole silver: their price is rounded down to whole silver,
---- staying below the competitor, and is at least 1 silver.
+--- Price to list at, `undercut` copper below a competitor's unit price (0 = match it). Gear (wholeSilver)
+--- can only be listed in whole silver: its price is rounded down to whole silver, staying below the
+--- competitor, and is at least 1 silver. Everything else keeps the copper undercut.
 function U.UndercutPrice(unit, undercut, wholeSilver)
     local price = math.max(1, unit - (undercut or 0))
     if wholeSilver then
@@ -158,6 +158,15 @@ function U.UndercutPrice(unit, undercut, wholeSilver)
         if price < 100 then price = 100 end
     end
     return price
+end
+
+local GEAR_CLASSES = { [2] = true, [4] = true } -- Enum.ItemClass.Weapon, Enum.ItemClass.Armor
+
+--- Armor or a weapon? (From the client's item data; no server request.)
+function U.IsGear(itemID)
+    if not (itemID and C_Item and C_Item.GetItemInfoInstant) then return false end
+    local ok, _, _, _, _, _, classID = pcall(C_Item.GetItemInfoInstant, itemID)
+    return ok and classID ~= nil and GEAR_CLASSES[classID] == true
 end
 
 function U.ItemName(itemID)
