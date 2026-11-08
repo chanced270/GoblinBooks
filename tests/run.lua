@@ -856,6 +856,7 @@ test("AH category tree and the local item filter (Flips page)", function()
     eq(#tree, 2, "categories without filters are skipped")
     eq(tree[1].label, "Armor")
     eq(#tree[1].subs, 1, "subcategories without filters are skipped")
+    eq(#tree[1].subs[1].subs, 0, "a slot category has no deeper level")
     -- itemID -> classID, subClassID, inventory type
     local items = { [2770] = { 7, 7 }, [2589] = { 7, 5 }, [10] = { 4, 1, 1 }, [11] = { 4, 1, 5 } }
     C_Item.GetItemInfoInstant = function(id)
@@ -1004,6 +1005,44 @@ test("undercut price: copper for commodities, whole silver below the competitor 
     eq(U.IsGear(12), false, "a recipe keeps the copper undercut"); eq(U.IsGear(13), false)
     eq(U.IsGear(999), false, "unknown item")
     C_Item.GetItemInfoInstant = saved
+end)
+
+test("AH category tree: a third level for slots (Armor > Leather > Shoulder)", function()
+    local ns = S.LoadAddon(ROOT)
+    assert(loadfile(ROOT .. "/AuctionScan.lua"))("GoblinBooks", ns)
+    local AS = ns.AHScan
+    local saved = { AuctionCategories, INVTYPE_HEAD, INVTYPE_SHOULDER, INVTYPE_CHEST }
+    INVTYPE_HEAD, INVTYPE_SHOULDER, INVTYPE_CHEST = "Head", "Shoulder", "Chest"
+    -- The game's list with slots: used as given.
+    AuctionCategories = {
+        { name = "Armor", filters = { { classID = 4 } }, subCategories = {
+            { name = "Leather", filters = { { classID = 4, subClassID = 2 } }, subCategories = {
+                { name = "Shoulder", filters = { { classID = 4, subClassID = 2, inventoryType = 3 } } },
+                { name = "Chest", filters = { { classID = 4, subClassID = 2, inventoryType = 5 }, { classID = 4, subClassID = 2, inventoryType = 20 } } },
+            } },
+        } },
+    }
+    local leather = AS.CategoryTree()[1].subs[1]
+    eq(#leather.subs, 2)
+    eq(leather.subs[1].label, "Shoulder")
+    eq(leather.subs[1].filters[1].inventoryType, 3)
+    -- No slots in the game's list: armor subcategories get them from the armor slots.
+    AuctionCategories = {
+        { name = "Armor", filters = { { classID = 4 } }, subCategories = {
+            { name = "Leather", filters = { { classID = 4, subClassID = 2 } } },
+        } },
+        { name = "Trade Goods", filters = { { classID = 7 } }, subCategories = {
+            { name = "Cloth", filters = { { classID = 7, subClassID = 5 } } },
+        } },
+    }
+    local tree = AS.CategoryTree()
+    local slots = tree[1].subs[1].subs
+    eq(#slots, 3, "only slots with a name in this client")
+    eq(slots[2].label, "Shoulder")
+    eq(slots[2].filters[1].subClassID, 2); eq(slots[2].filters[1].inventoryType, 3)
+    eq(#slots[3].filters, 2, "chest includes robes")
+    eq(#tree[2].subs[1].subs, 0, "not armor: no slots")
+    AuctionCategories, INVTYPE_HEAD, INVTYPE_SHOULDER, INVTYPE_CHEST = saved[1], saved[2], saved[3], saved[4]
 end)
 
 print(("%d passed, %d failed"):format(passed, failed))

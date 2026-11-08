@@ -414,20 +414,48 @@ function S.Categories()
     return cats
 end
 
---- { { label, filters, subs = { { label, filters } } } } for category dropdowns (Buy and Flips pages).
+-- Armor slots, for armor subcategories the game's list gives no slots for: { inventory types, global name }.
+local ARMOR_SLOTS = {
+    { { 1 }, "INVTYPE_HEAD" }, { { 3 }, "INVTYPE_SHOULDER" }, { { 5, 20 }, "INVTYPE_CHEST" },
+    { { 6 }, "INVTYPE_WAIST" }, { { 7 }, "INVTYPE_LEGS" }, { { 8 }, "INVTYPE_FEET" },
+    { { 9 }, "INVTYPE_WRIST" }, { { 10 }, "INVTYPE_HAND" },
+}
+
+--- Slot subcategories for an armor subcategory (e.g. Leather -> Head, Shoulder, ...), built from its filter.
+local function ArmorSlots(filters)
+    local f = filters[1]
+    if #filters ~= 1 or f.classID ~= 4 or f.subClassID == nil or f.inventoryType ~= nil then return {} end
+    local out = {}
+    for _, s in ipairs(ARMOR_SLOTS) do
+        local label = _G[s[2]]
+        if type(label) == "string" then
+            local fl = {}
+            for _, inv in ipairs(s[1]) do fl[#fl + 1] = { classID = 4, subClassID = f.subClassID, inventoryType = inv } end
+            out[#out + 1] = { label = label, filters = fl, subs = {} }
+        end
+    end
+    return out
+end
+
+--- A category from the game's list with its subcategories (as deep as `depth` levels).
+local function CategoryNode(c, depth)
+    local subs = {}
+    if depth > 1 then
+        for _, sc in ipairs(c.subCategories or {}) do
+            if sc.name and type(sc.filters) == "table" and #sc.filters > 0 then subs[#subs + 1] = CategoryNode(sc, depth - 1) end
+        end
+    end
+    if depth == 2 and #subs == 0 then subs = ArmorSlots(c.filters) end
+    return { label = c.name, filters = c.filters, subs = subs }
+end
+
+--- { { label, filters, subs = { { label, filters, subs = { slots... } } } } } for category dropdowns (Buy,
+--- Flips and Sell pages). The third level is the item slot (Armor > Leather > Shoulder) where there is one.
 function S.CategoryTree()
     local cats = {}
     if type(AuctionCategories) == "table" then
         for _, c in ipairs(AuctionCategories) do
-            if c.name and type(c.filters) == "table" and #c.filters > 0 then
-                local subs = {}
-                for _, sc in ipairs(c.subCategories or {}) do
-                    if sc.name and type(sc.filters) == "table" and #sc.filters > 0 then
-                        subs[#subs + 1] = { label = sc.name, filters = sc.filters }
-                    end
-                end
-                cats[#cats + 1] = { label = c.name, filters = c.filters, subs = subs }
-            end
+            if c.name and type(c.filters) == "table" and #c.filters > 0 then cats[#cats + 1] = CategoryNode(c, 3) end
         end
     end
     if #cats == 0 and C_Item and C_Item.GetItemClassInfo then

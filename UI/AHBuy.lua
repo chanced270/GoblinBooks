@@ -44,35 +44,56 @@ function UI.CreateAHBuy(parent, setStatus)
         f:DoSearch()
     end)
 
-    -- Category filters + favorites.
+    -- Category filters (category > subcategory > slot, e.g. Armor > Leather > Shoulder) + favorites.
     local cats = S.CategoryTree()
     local catOpts = { { key = "all", label = "All categories" } }
     for i, c in ipairs(cats) do catOpts[#catOpts + 1] = { key = i, label = c.label } end
-    f.catDrop = W.Dropdown(f, 116, function(key)
+    f.catDrop = W.Dropdown(f, 100, function(key)
         f.cat = cats[key]
-        f.sub = nil
+        f.sub, f.slot = nil, nil
         f:UpdateSubOptions()
         if f.cat then f:DoSearch() end
     end)
     f.catDrop:SetOptions(catOpts)
     f.catDrop:SetValue("all")
     f.catDrop:SetPoint("TOPLEFT", f.search, "BOTTOMLEFT", 0, -8)
-    f.subDrop = W.Dropdown(f, 116, function(key)
-        f.sub = f.cat and f.cat.subs[key] or nil
+    f.subDrop = W.Dropdown(f, 100, function(key)
+        f.sub, f.slot = f.cat and f.cat.subs[key] or nil, nil
+        f:UpdateSlotOptions()
         f:DoSearch()
     end)
     f.subDrop:SetPoint("LEFT", f.catDrop, "RIGHT", 6, 0)
+    f.slotDrop = W.Dropdown(f, 88, function(key)
+        f.slot = f.sub and f.sub.subs[key] or nil
+        f:DoSearch()
+    end)
+    f.slotDrop:SetPoint("LEFT", f.subDrop, "RIGHT", 6, 0)
+    function f:UpdateSlotOptions()
+        local opts = { { key = "all", label = (self.sub and #self.sub.subs > 0) and "All slots" or "Slot" } }
+        for i, s in ipairs(self.sub and self.sub.subs or {}) do opts[#opts + 1] = { key = i, label = s.label } end
+        self.slotDrop:SetOptions(opts)
+        self.slotDrop:SetValue("all")
+        self.slotDrop:SetEnabled(#opts > 1)
+    end
     function f:UpdateSubOptions()
         local opts = { { key = "all", label = self.cat and "All subcategories" or "Subcategory" } }
         for i, sc in ipairs(self.cat and self.cat.subs or {}) do opts[#opts + 1] = { key = i, label = sc.label } end
         self.subDrop:SetOptions(opts)
         self.subDrop:SetValue("all")
         self.subDrop:SetEnabled(#opts > 1)
+        self:UpdateSlotOptions()
     end
     f:UpdateSubOptions()
-    f.favBtn = W.Button(f, P.FAV_ICON .. " Favorites", 88, function() f:ShowFavorites() end)
-    f.favBtn:SetPoint("LEFT", f.subDrop, "RIGHT", 6, 0)
-    f.shopBtn = W.Button(f, "Shopping", 80, function() f:ShowShopping() end)
+    f.favBtn = W.Button(f, P.FAV_ICON, 28, function() f:ShowFavorites() end)
+    f.favBtn:SetPoint("LEFT", f.slotDrop, "RIGHT", 6, 0)
+    f.favBtn:HookScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:AddLine("Favorites")
+        GameTooltip:AddLine("Items you starred. Click one to load its listings.", 0.8, 0.8, 0.8, true)
+        GameTooltip:Show()
+    end)
+    f.favBtn:HookScript("OnLeave", function() GameTooltip:Hide() end)
+    f.shopBtn = W.Button(f, "Shopping", 72, function() f:ShowShopping() end)
     f.shopBtn:SetPoint("LEFT", f.favBtn, "RIGHT", 6, 0)
 
     -- Search results.
@@ -297,7 +318,7 @@ function UI.CreateAHBuy(parent, setStatus)
 
     function f:DoSearch(textOverride)
         local text = textOverride or self.search:GetText() or ""
-        local group = self.sub or self.cat
+        local group = self.slot or self.sub or self.cat
         local filters = not textOverride and group and group.filters or nil
         if text == "" and not filters then return end
         self.searching = true
@@ -307,7 +328,7 @@ function UI.CreateAHBuy(parent, setStatus)
             results.empty:SetText("Search is not available")
             return
         end
-        local where = filters and (" in " .. group.label) or ""
+        local where = filters and (" in " .. (self.slot and (self.sub.label .. " " .. self.slot.label) or group.label)) or ""
         setStatus(text ~= "" and ("Searching for \"%s\"%s..."):format(text, where) or ("Browsing %s..."):format(group.label))
     end
 
