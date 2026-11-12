@@ -1,6 +1,8 @@
 # GoblinBooks changelog
 
-## Unreleased
+## 0.1.6 — Hotfix
+
+Follows the [WoW Forever hotfixes of November 11, 2026](https://worldofwarcraft.blizzard.com/en-gb/news/24315281/wow-forever-hotfixes-november-11-2026), which changed several vendor prices. Vendor sell prices were already read live from the game, so tooltips, net worth and crafting values pick up the new prices on their own.
 
 ### Fixed
 - Vendor buy prices (reagents like thread, flux and vials) now follow price changes. Each vendor's latest price replaces what it charged before, and crafting costs use the cheapest of those. Before, the lowest price ever seen was kept forever, so a vendor price increase made crafts look cheaper than they are. A price saved by an older version is replaced the next time you see that item at a vendor.
