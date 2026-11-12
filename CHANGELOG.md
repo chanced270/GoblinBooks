@@ -1,5 +1,10 @@
 # GoblinBooks changelog
 
+## Unreleased
+
+### Fixed
+- Vendor buy prices (reagents like thread, flux and vials) now follow price changes. Each vendor's latest price replaces what it charged before, and crafting costs use the cheapest of those. Before, the lowest price ever seen was kept forever, so a vendor price increase made crafts look cheaper than they are. A price saved by an older version is replaced the next time you see that item at a vendor.
+
 ## 0.1.5
 
 ### Added

@@ -3,7 +3,8 @@
 --
 -- db.recipes[profession][key] = { n = name, out = itemID?, qmin, qmax, icon, r = { { i = itemID, q = qty, n = name } },
 --                                 chars = { [charKey] = true } }
--- db.vendorBuy[itemID] = cheapest per-unit merchant price seen (gold only; currency costs are skipped)
+-- db.vendorBuySeen[itemID] = { [vendorKey] = { p = per-unit price, t = when seen } } (latest price per vendor)
+-- db.vendorBuy[itemID] = cheapest current per-unit price across those vendors (gold only; currency costs skipped)
 local _, ns = ...
 local CR = {}
 ns.Crafting = CR
@@ -14,14 +15,46 @@ local function P() return ns.Prices end
 ---------------------------------------------------------------------------
 -- Vendor buy prices (reagents like thread, flux and vials)
 ---------------------------------------------------------------------------
-function CR.RecordVendorPrice(itemID, unitPrice)
+-- Each vendor's latest price replaces what that vendor charged before, so a price increase is picked up.
+-- vendorBuy[itemID] is the cheapest of those current prices (what reagent costing and the API read).
+-- A price saved before per-vendor tracking has no vendor; it stays until the item is seen at any vendor.
+local function Cheapest(seen)
+    local best
+    for _, v in pairs(seen) do
+        if not best or v.p < best then best = v.p end
+    end
+    return best
+end
+
+function CR.RecordVendorPrice(itemID, unitPrice, vendor, t)
     if not itemID or not unitPrice or unitPrice <= 0 then return end
-    ns.db.vendorBuy = ns.db.vendorBuy or {}
-    local cur = ns.db.vendorBuy[itemID]
-    if not cur or unitPrice < cur then ns.db.vendorBuy[itemID] = math.floor(unitPrice + 0.5) end
+    local db = ns.db
+    db.vendorBuy = db.vendorBuy or {}
+    db.vendorBuySeen = db.vendorBuySeen or {}
+    local seen = db.vendorBuySeen[itemID]
+    if not seen then
+        seen = {}
+        db.vendorBuySeen[itemID] = seen
+    end
+    seen[vendor or "?"] = { p = math.floor(unitPrice + 0.5), t = t or time() }
+    db.vendorBuy[itemID] = Cheapest(seen) -- replaces an old vendor-less price
+end
+
+--- Prices this item has at each vendor it was seen at: { [vendorKey] = { p = copper, t = time } } or nil.
+function CR.VendorPrices(itemID)
+    return ns.db.vendorBuySeen and itemID and ns.db.vendorBuySeen[itemID] or nil
+end
+
+--- Key for the open merchant: its NPC ID from the GUID, or nil.
+local function MerchantKey()
+    local guid = UnitGUID and UnitGUID("npc")
+    -- "Creature-0-<server>-<instance>-<zone>-<npcID>-<spawn>"
+    local npcID = type(guid) == "string" and guid:match("^%a+%-%d+%-%d+%-%d+%-%d+%-(%d+)")
+    return npcID and ("npc:" .. npcID) or nil
 end
 
 local function ScanMerchant()
+    local vendor, now = MerchantKey(), time()
     local n = (GetMerchantNumItems and GetMerchantNumItems()) or 0
     for i = 1, n do
         local itemID = GetMerchantItemID and GetMerchantItemID(i)
@@ -35,7 +68,7 @@ local function ScanMerchant()
             if ok then price, stack, extended = p, q, ext end
         end
         if itemID and price and price > 0 and not extended then
-            CR.RecordVendorPrice(itemID, price / math.max(1, stack or 1))
+            CR.RecordVendorPrice(itemID, price / math.max(1, stack or 1), vendor, now)
         end
     end
 end

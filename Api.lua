@@ -4,7 +4,7 @@
 --   GoblinBooksAPI.IsReady()                    -> true once saved variables are loaded
 --   GoblinBooksAPI.GetMarketPrice(itemID)       -> copper per unit (recent AH lowest or 7-day avg) or nil
 --   GoblinBooksAPI.GetVendorSellPrice(itemID)   -> copper per unit a vendor pays, or nil
---   GoblinBooksAPI.GetVendorBuyPrice(itemID)    -> cheapest merchant price seen, or nil
+--   GoblinBooksAPI.GetVendorBuyPrice(itemID)    -> cheapest current price across merchants seen, or nil
 --   GoblinBooksAPI.GetReagentPrice(itemID)      -> copper, "AH" | "Vendor"  (cheapest way to buy it)
 --   GoblinBooksAPI.GetCutRate()                 -> AH cut (0..1), measured (bool)
 --   GoblinBooksAPI.GetRecipe(recipeID)          -> saved recipe { n, out, qmin, qmax, r = { { i, q, alt? } } } or nil

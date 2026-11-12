@@ -449,6 +449,30 @@ test("crafting: cheapest reagent source and profit after the cut", function()
     eq(res2.missing, 1, "unpriced reagent flagged")
 end)
 
+test("vendor buy prices: latest per vendor, cheapest across vendors", function()
+    local ns = S.LoadAddon(ROOT)
+    local CR = ns.Crafting
+    ns.db.vendorBuy = { [2] = 30 }                -- saved before per-vendor tracking
+    CR.RecordVendorPrice(2, 50, "npc:100")
+    eq(ns.db.vendorBuy[2], 50, "old vendor-less price replaced")
+    CR.RecordVendorPrice(2, 40, "npc:200")
+    eq(ns.db.vendorBuy[2], 40, "cheapest vendor wins")
+    CR.RecordVendorPrice(2, 60, "npc:200")        -- that vendor raised its price
+    eq(ns.db.vendorBuy[2], 50, "price increase picked up")
+    eq(CR.VendorPrices(2)["npc:200"].p, 60)
+    eq(CR.ReagentPrice(2), 50, "reagent costing uses the current price")
+    -- Scanning an open merchant keys the price by the NPC ID in its GUID.
+    UnitGUID = function(u) return u == "npc" and "Creature-0-1465-0-2105-3367-000043F59F" or nil end
+    S.merchantItems = { [1] = 7 }
+    local oldNum = GetMerchantNumItems
+    GetMerchantNumItems = function() return 1 end
+    S.Fire("MERCHANT_SHOW")
+    UnitGUID, GetMerchantNumItems = nil, oldNum
+    S.merchantItems = nil
+    eq(CR.VendorPrices(7)["npc:3367"].p, 100)
+    eq(ns.db.vendorBuy[7], 100)
+end)
+
 test("sold auctions wait for the mailbox and teach the delay", function()
     local ns = S.LoadAddon(ROOT)
     local AH = ns.AuctionHouse
